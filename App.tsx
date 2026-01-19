@@ -15,7 +15,7 @@ const Icons = {
   Pause: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"/></svg>,
   Edit: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>,
   Trash: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
-  Copy: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>,
+  Copy: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>,
   ChevronLeft: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>,
   ChevronRight: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>,
   Close: () => <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>,
@@ -32,8 +32,9 @@ const Button: React.FC<{
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'icon';
   className?: string;
   disabled?: boolean;
-}> = ({ onClick, children, variant = 'primary', className = '', disabled }) => {
-  const base = "font-serif text-xs md:text-sm uppercase tracking-wider transition-all duration-200 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed select-none";
+  title?: string;
+}> = ({ onClick, children, variant = 'primary', className = '', disabled, title }) => {
+  const base = "font-serif text-xs md:text-sm uppercase tracking-wider transition-all duration-200 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed select-none disabled:grayscale";
   
   const styles = {
     primary: "bg-gradient-to-r from-gold-600 to-gold-400 text-black font-bold hover:brightness-110 shadow-lg px-4 py-2 rounded-sm active:scale-95",
@@ -43,7 +44,7 @@ const Button: React.FC<{
     icon: "p-2 hover:bg-gold-900/20 text-gold-400 rounded-full active:scale-95"
   };
 
-  return <button onClick={onClick} className={`${base} ${styles[variant]} ${className}`} disabled={disabled}>{children}</button>;
+  return <button onClick={onClick} className={`${base} ${styles[variant]} ${className}`} disabled={disabled} title={title}>{children}</button>;
 };
 
 // --- DIRECTOR PANEL COMPONENT ---
@@ -84,8 +85,16 @@ const DirectorPanel: React.FC<{
     });
   };
 
+  // Helper to determine if force actions should be enabled using Top-Level State
+  const isRevealed = gameState.currentQuestionState === QuestionState.REVEALED;
+
   const forceResolve = (action: 'AWARD' | 'VOID' | 'RETURN') => {
     if (!gameState.currentQuestion) return;
+    if (action !== 'RETURN' && !isRevealed && action !== 'VOID') {
+       // STRICT LOCK: Director Panel must also respect the reveal rule
+       return; 
+    }
+
     const { categoryId, questionId } = gameState.currentQuestion;
     setGameState(prev => {
        const cats = prev.categories.map(c => 
@@ -117,6 +126,7 @@ const DirectorPanel: React.FC<{
          categories: cats,
          players: newPlayers,
          currentQuestion: null,
+         currentQuestionState: null, // Reset top level state
          activityLog: updateLog(`FORCE ${action}: ${categoryId}`)
        };
     });
@@ -162,11 +172,14 @@ const DirectorPanel: React.FC<{
               <div>
                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Live Controls</label>
                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="primary" disabled={!gameState.currentQuestion} onClick={() => forceResolve('AWARD')}>FORCE AWARD</Button>
-                    <Button variant="danger" disabled={!gameState.currentQuestion} onClick={() => forceResolve('VOID')}>FORCE VOID</Button>
+                    <Button variant="primary" disabled={!isRevealed} onClick={() => forceResolve('AWARD')} title={!isRevealed ? "Reveal First" : "Force Award"}>FORCE AWARD</Button>
+                    <Button variant="danger" disabled={!isRevealed} onClick={() => forceResolve('VOID')} title={!isRevealed ? "Reveal First" : "Force Void"}>FORCE VOID</Button>
                     <Button variant="secondary" disabled={!gameState.currentQuestion} onClick={() => setGameState(p => ({...p, currentQuestion: null}))}>FORCE CLOSE</Button>
                     <Button variant="secondary" onClick={() => setGameState(p => ({...p, timer: 0, isTimerRunning: false}))}>STOP TIMER</Button>
                  </div>
+                 {!isRevealed && gameState.currentQuestion && (
+                    <div className="text-[9px] text-red-500 mt-1 text-center border border-red-900/30 p-1">⚠ REVEAL REQUIRED</div>
+                 )}
               </div>
 
               <div>
@@ -319,6 +332,7 @@ function CruzPhamTriviaApp() {
     players: Array(8).fill(null).map((_, i) => ({ id: i, name: `PLAYER ${i + 1}`, score: 0, streak: 0 })),
     activePlayerIndex: 0,
     currentQuestion: null,
+    currentQuestionState: null, // Initial State
     activityLog: [],
     timer: 0,
     isTimerRunning: false,
@@ -494,6 +508,7 @@ function CruzPhamTriviaApp() {
       templateId: template.id,
       categories: gameCategories,
       currentQuestion: null,
+      currentQuestionState: null, // Reset
       activityLog: [`STARTED: ${template.name}`],
       players: prev.players.map(p => ({ ...p, score: 0, streak: 0 })),
       timer: 0,
@@ -519,7 +534,12 @@ function CruzPhamTriviaApp() {
         setTimeout(() => soundService.playDoubleOrNothing(), 300); // Slight delay for drama
       }
 
-      return { ...prev, categories: cats, currentQuestion: { categoryId, questionId } };
+      return { 
+        ...prev, 
+        categories: cats, 
+        currentQuestion: { categoryId, questionId },
+        currentQuestionState: QuestionState.ACTIVE // Set authoritative state
+      };
     });
   }, []);
 
@@ -527,18 +547,40 @@ function CruzPhamTriviaApp() {
     if (!gameState.currentQuestion) return;
     soundService.playReveal();
     logger.info('GAME_REVEAL_ANSWER', { ...gameState.currentQuestion });
+    
     setGameState(prev => {
       if (!prev.currentQuestion) return prev;
       const { categoryId, questionId } = prev.currentQuestion;
       const cats = prev.categories.map(c => 
         c.id === categoryId ? { ...c, questions: c.questions.map(q => q.id === questionId ? { ...q, state: QuestionState.REVEALED } : q) } : c
       );
-      return { ...prev, categories: cats, isTimerRunning: false };
+      return { 
+        ...prev, 
+        categories: cats, 
+        currentQuestionState: QuestionState.REVEALED, // Set authoritative state
+        isTimerRunning: false 
+      };
     });
-  }, [gameState.currentQuestion]);
+  }, [gameState.currentQuestion]); // Dependency safe as we set explicit state
 
   const resolveQuestion = useCallback((action: 'AWARD' | 'VOID' | 'RETURN') => {
     if (!gameState.currentQuestion) return;
+    
+    // STRICT REVEAL LOCK: Use Top-Level State
+    // "Void: reject unless questionStatus === REVEALED" per instructions
+    if (gameState.currentQuestionState !== QuestionState.REVEALED && action !== 'VOID') { 
+        if (gameState.currentQuestionState === QuestionState.ACTIVE) {
+             showToast("Reveal the answer first", 'error');
+             logger.warn("ILLEGAL_ACTION_BLOCKED", { action, state: gameState.currentQuestionState });
+             return;
+        }
+    }
+    
+    if (gameState.currentQuestionState === QuestionState.ACTIVE) {
+        showToast("Reveal the answer first", 'error');
+        return;
+    }
+
     const cid = crypto.randomUUID();
     logger.info(`GAME_RESOLVE_${action}`, { ...gameState.currentQuestion }, cid);
 
@@ -584,15 +626,41 @@ function CruzPhamTriviaApp() {
         return p;
       });
 
-      return { ...prev, categories: cats, players, currentQuestion: null, activityLog: [log, ...prev.activityLog].slice(0, 15) };
+      return { 
+        ...prev, 
+        categories: cats, 
+        players, 
+        currentQuestion: null, 
+        currentQuestionState: null, // Reset Top-Level State
+        activityLog: [log, ...prev.activityLog].slice(0, 15) 
+      };
     });
-  }, [gameState.currentQuestion]);
+  }, [gameState.currentQuestion, gameState.currentQuestionState]); // Add explicit dependency to prevent stale closure
 
   // --- Keyboard & Timer ---
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (view !== 'GAME' || isEditorOpen) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+      // STRICT LOCK CHECK FOR KEYBOARD using Top-Level State
+      if (gameState.currentQuestion) {
+         if (gameState.currentQuestionState === QuestionState.ACTIVE) {
+            // ONLY SPACE (Reveal) allowed
+            if (e.key === ' ') {
+               e.preventDefault();
+               revealAnswer();
+               return;
+            }
+            // Block other known interaction keys
+            if (['Enter', 'Escape', 'Backspace', 'ArrowUp', 'ArrowDown', '+', '-'].includes(e.key)) {
+               e.preventDefault();
+               showToast("Reveal the answer first", 'warning');
+               return;
+            }
+            return; // Ignore other keys
+         }
+      }
 
       switch(e.key) {
         case ' ': e.preventDefault(); revealAnswer(); break;
@@ -628,7 +696,7 @@ function CruzPhamTriviaApp() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [view, isEditorOpen, revealAnswer, resolveQuestion]);
+  }, [view, isEditorOpen, revealAnswer, resolveQuestion, gameState.currentQuestion, gameState.currentQuestionState]); // Added currentQuestionState dependency
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -1127,10 +1195,15 @@ function CruzPhamTriviaApp() {
                       
                       <h2 className={`font-serif font-bold leading-tight drop-shadow-lg text-responsive-hero max-w-4xl ${isVoided ? 'text-zinc-700 blur-sm' : 'text-white'}`}>{q.question}</h2>
                       
-                      {q.state === QuestionState.REVEALED && !isVoided && (
+                      {/* USE TOP-LEVEL STATE FOR RENDERING */}
+                      {gameState.currentQuestionState === QuestionState.REVEALED && !isVoided && (
                         <div className="mt-12 pt-8 border-t-2 border-gold-500/30 w-full animate-in slide-in-from-bottom-8 duration-500">
                            <p className="font-serif text-gold-400 text-responsive-xl">{q.answer}</p>
                         </div>
+                      )}
+                      
+                      {gameState.currentQuestionState !== QuestionState.REVEALED && !isVoided && (
+                         <div className="absolute bottom-8 text-zinc-500 text-xs tracking-[0.3em] uppercase animate-pulse">Reveal the answer to continue</div>
                       )}
                    </div>
 
@@ -1140,15 +1213,41 @@ function CruzPhamTriviaApp() {
                         <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>CLOSE VOIDED QUESTION</Button>
                       ) : (
                         <>
-                          {q.state !== QuestionState.REVEALED ? (
-                            <Button onClick={revealAnswer} className="w-64 py-4 text-xl">REVEAL</Button>
-                          ) : (
-                            <>
-                              <Button variant="danger" onClick={() => resolveQuestion('VOID')}>VOID</Button>
-                              <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>RETURN</Button>
-                              <Button variant="primary" onClick={() => resolveQuestion('AWARD')} className="w-64 py-4 text-xl">AWARD</Button>
-                            </>
-                          )}
+                           {/* STRICT LOCK UI: Show all, but disable non-reveal actions if not revealed */}
+                           <Button 
+                             variant="danger" 
+                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
+                             onClick={() => resolveQuestion('VOID')}
+                             title={gameState.currentQuestionState !== QuestionState.REVEALED ? "Locked until revealed" : "Void Question (Esc)"}
+                           >
+                             VOID
+                           </Button>
+
+                           <Button 
+                             variant="secondary" 
+                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
+                             onClick={() => resolveQuestion('RETURN')}
+                             title={gameState.currentQuestionState !== QuestionState.REVEALED ? "Locked until revealed" : "Return to Board (Bksp)"}
+                           >
+                             RETURN
+                           </Button>
+                           
+                           {/* Reveal Button - Only active when not revealed */}
+                           {gameState.currentQuestionState !== QuestionState.REVEALED ? (
+                              <Button onClick={revealAnswer} className="w-64 py-4 text-xl shadow-[0_0_20px_rgba(221,184,86,0.2)] animate-pulse">REVEAL</Button>
+                           ) : (
+                              <div className="w-64 text-center text-gold-500 font-bold tracking-widest text-xs opacity-50 select-none">ANSWER REVEALED</div>
+                           )}
+
+                           <Button 
+                             variant="primary" 
+                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
+                             onClick={() => resolveQuestion('AWARD')} 
+                             className={gameState.currentQuestionState === QuestionState.REVEALED ? "w-48 py-3 text-lg" : ""}
+                             title={gameState.currentQuestionState !== QuestionState.REVEALED ? "Locked until revealed" : "Award Points (Enter)"}
+                           >
+                             AWARD
+                           </Button>
                         </>
                       )}
                    </div>

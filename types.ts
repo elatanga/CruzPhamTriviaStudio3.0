@@ -55,6 +55,7 @@ export interface GameState {
   players: Player[];
   activePlayerIndex: number;
   currentQuestion: { categoryId: string; questionId: string } | null;
+  currentQuestionState: QuestionState | null; // NEW: Single source of truth for UI gating
   activityLog: string[];
   timer: number;
   isTimerRunning: boolean;
