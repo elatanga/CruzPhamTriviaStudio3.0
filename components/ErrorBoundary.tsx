@@ -17,6 +17,9 @@ export class ErrorBoundary extends Component<Props, State> {
     error: null,
   };
 
+  // Fix: Explicitly declare props to satisfy TS compiler when inheritance inference fails
+  public declare props: Readonly<Props>;
+
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }

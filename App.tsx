@@ -309,7 +309,13 @@ function CruzPhamTriviaApp() {
         } : c
       );
 
-      const players = prev.players.map((p, i) => i === prev.activePlayerIndex ? { ...p, score: p.score + points } : p);
+      const players = prev.players.map((p, i) => {
+        if (i === prev.activePlayerIndex) {
+          const newStreak = action === 'AWARD' ? p.streak + 1 : p.streak;
+          return { ...p, score: p.score + points, streak: newStreak };
+        }
+        return p;
+      });
 
       return { ...prev, categories: cats, players, currentQuestion: null, activityLog: [log, ...prev.activityLog].slice(0, 8) };
     });
@@ -339,7 +345,12 @@ function CruzPhamTriviaApp() {
           soundService.playClick();
           break;
         case '-': 
-          setGameState(p => { const pl = [...p.players]; pl[p.activePlayerIndex].score -= 100; return {...p, players: pl}; }); 
+          setGameState(p => { 
+            const pl = [...p.players]; 
+            pl[p.activePlayerIndex].score -= 100; 
+            pl[p.activePlayerIndex].streak = 0; // Reset streak on penalty
+            return {...p, players: pl}; 
+          }); 
           soundService.playClick();
           break;
         case 't': case 'T': 
@@ -682,6 +693,14 @@ function CruzPhamTriviaApp() {
                  <div className="text-[9px] lg:text-xs text-zinc-500 tracking-wider uppercase mb-1 font-bold">{p.name}</div>
                  <div className={`font-serif font-bold text-responsive-lg leading-none ${p.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{p.score}</div>
                  {i === gameState.activePlayerIndex && <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-glow"/>}
+                 
+                 {/* STREAK INDICATOR */}
+                 {p.streak >= 2 && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/80 border border-orange-500/50 rounded-full px-2 py-0.5 shadow-[0_0_10px_rgba(249,115,22,0.4)] animate-in slide-in-from-bottom-2 duration-300 z-20">
+                      <span className="text-[10px] animate-pulse filter drop-shadow-[0_0_2px_rgba(249,115,22,0.8)]">🔥</span>
+                      <span className="text-[9px] font-mono font-bold text-orange-400">{p.streak}</span>
+                    </div>
+                  )}
               </div>
             ))}
           </div>
