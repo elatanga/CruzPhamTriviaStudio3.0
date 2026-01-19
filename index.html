@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>CruzPham Trivia</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
@@ -41,6 +41,12 @@
             boxShadow: {
               'glow': '0 0 15px rgba(221, 184, 86, 0.3)',
               'glow-strong': '0 0 25px rgba(221, 184, 86, 0.6)',
+            },
+            spacing: {
+              'safe-top': 'env(safe-area-inset-top)',
+              'safe-bottom': 'env(safe-area-inset-bottom)',
+              'safe-left': 'env(safe-area-inset-left)',
+              'safe-right': 'env(safe-area-inset-right)',
             }
           },
         },
@@ -51,14 +57,29 @@
         background-color: #050505;
         color: #DDB856;
         overflow: hidden; /* ABSOLUTE UI RULE: NO SCROLLING */
-        height: 100vh;
+        height: 100vh; /* Fallback */
+        height: 100dvh; /* Dynamic Viewport Height */
         width: 100vw;
       }
+      /* Safe Area Utilities */
+      .pt-safe { padding-top: env(safe-area-inset-top); }
+      .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+      .pl-safe { padding-left: env(safe-area-inset-left); }
+      .pr-safe { padding-right: env(safe-area-inset-right); }
+      
+      .h-safe-screen { height: 100dvh; }
+
+      /* Custom Scrollbar for internal panels */
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: #111; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #8A6605; border-radius: 2px; }
+
       /* Text clamp utility for responsiveness */
+      .text-responsive-xs { font-size: clamp(8px, 1vh, 12px); }
       .text-responsive-base { font-size: clamp(10px, 1.5vh, 16px); }
       .text-responsive-lg { font-size: clamp(14px, 2.5vh, 24px); }
-      .text-responsive-xl { font-size: clamp(20px, 4vh, 48px); }
-      .text-responsive-hero { font-size: clamp(24px, 6vh, 80px); }
+      .text-responsive-xl { font-size: clamp(18px, 3.5vh, 32px); }
+      .text-responsive-hero { font-size: clamp(20px, 5vh, 60px); }
     </style>
   <script type="importmap">
 {
