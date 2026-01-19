@@ -3,7 +3,9 @@ export const UI_TEXT = {
   brand: {
     studioName: "CRUZPHAM TRIVIA STUDIOS",
     appName: "CRUZPHAM TRIVIA",
-    footer: "CREATED BY EL CRUZPHAM • POWERED BY CRUZPHAM TRIVIA STUDIOS"
+    footer: "CREATED BY EL CRUZPHAM • POWERED BY CRUZPHAM TRIVIA STUDIOS",
+    credits1: "CREATED BY EL CRUZPHAM",
+    credits2: "POWERED BY CRUZPHAM CREATOR NETWORK AGENCY"
   },
   common: {
     doubleOrNothing: "Double Or Nothing",
@@ -17,6 +19,15 @@ export const UI_TEXT = {
     continue: "CONTINUE",
     skip: "SKIP FOR NOW",
     defaultName: "CruzPham Trivia Event"
+  },
+  production: {
+    selectTitle: "SELECT PRODUCTION",
+    createTitle: "NEW PRODUCTION",
+    namePlaceholder: "SHOW NAME (e.g. Trivia Night)",
+    createButton: "CREATE SHOW",
+    selectButton: "OPEN SHOW",
+    switch: "SWITCH SHOW",
+    currentPrefix: "SHOW: "
   },
   auth: {
     tabs: {
@@ -182,10 +193,14 @@ export const UI_TEXT = {
     controls: {
       reveal: "REVEAL",
       award: "AWARD",
+      steal: "STEAL",
+      confirmSteal: "CONFIRM STEAL",
+      cancelSteal: "CANCEL",
       void: "VOID",
       return: "RETURN",
       back: "BACK",
-      revealed: "ANSWER REVEALED"
+      revealed: "ANSWER REVEALED",
+      selectSteal: "SELECT PLAYER TO STEAL:"
     },
     tooltips: {
       reveal: "Space: Reveal Answer",

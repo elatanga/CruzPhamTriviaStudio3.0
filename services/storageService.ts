@@ -1,5 +1,5 @@
 
-import { Template, User, Session, AppError, GameState, Admin, AuthToken, AuditLogEntry, UserStatus, TokenRequest, TokenRequestStatus } from '../types';
+import { Template, User, Session, AppError, GameState, Admin, AuthToken, AuditLogEntry, UserStatus, TokenRequest, TokenRequestStatus, Production } from '../types';
 import { logger } from './loggerService';
 
 // --- CONSTANTS ---
@@ -10,6 +10,8 @@ const KEYS = {
   SESSIONS: 'cruzphamtrivia_sessions_v3',
   AUDIT_LOGS: 'cruzphamtrivia_audit_v1',
   TEMPLATES: 'cruzphamtrivia_templates_v2',
+  PRODUCTIONS: 'cruzphamtrivia_productions_v1',
+  ACTIVE_CONTEXT: 'cruzphamtrivia_active_context_v1',
   TICKETS: 'cruzphamtrivia_detach_tickets_v1',
   GAME_STATE: 'cruzphamtrivia_gamestate_v2',
   REQUESTS: 'cruzphamtrivia_token_requests_v1',
@@ -19,6 +21,7 @@ const KEYS = {
 const SESSION_TTL = 60 * 60 * 1000; // 1 Hour
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+const MAX_TEMPLATES_PER_PRODUCTION = 40;
 
 // --- IN-MEMORY RATE LIMITER ---
 const rateLimits: Record<string, number[]> = {};
@@ -127,6 +130,7 @@ initDefaultAdmin();
 // --- TEMPLATE INTERFACE WITH OWNER ---
 interface StoredTemplate {
   owner: string;
+  productionId?: string; // Newly added
   template: Template;
 }
 
@@ -149,7 +153,6 @@ export const StorageService = {
   login: async (username: string, token: string): Promise<{ success: boolean; session?: Session; error?: string; isAdmin?: boolean }> => {
     const cid = crypto.randomUUID();
     const cleanUsername = normalizeUsername(username);
-    // Normalize the token input to match stored raw tokens (removing UI formatting like dashes)
     const cleanToken = normalizeToken(token);
     
     if (!checkRateLimit(`login_${cleanUsername}`)) {
@@ -207,10 +210,7 @@ export const StorageService = {
       
       for (const t of userTokens) {
         if (t.expiresAt && Date.now() > t.expiresAt) continue;
-        
-        // Hash the cleaned input token with the stored salt
         const attemptHash = await hashPassword(cleanToken, t.salt);
-        
         if (attemptHash === t.tokenHash) {
           validToken = t;
           break;
@@ -219,7 +219,6 @@ export const StorageService = {
 
       if (validToken) {
         let sessions = getDB<Session>(KEYS.SESSIONS);
-        // Enforce single session per user - clear old sessions
         sessions = sessions.filter(s => s.userId !== user.id);
         
         const session: Session = {
@@ -260,7 +259,7 @@ export const StorageService = {
     const session = sessions.find(s => s.sessionId === sessionId);
 
     if (!session) return null;
-    if (Date.now() > session.expiresAt + 60000) return null; // 1 min grace
+    if (Date.now() > session.expiresAt + 60000) return null;
 
     session.lastHeartbeat = Date.now();
     session.expiresAt = Date.now() + SESSION_TTL;
@@ -274,6 +273,7 @@ export const StorageService = {
     const sessions = getDB<Session>(KEYS.SESSIONS);
     saveDB(KEYS.SESSIONS, sessions.filter(s => s.sessionId !== sessionId));
     localStorage.removeItem(KEYS.GAME_STATE);
+    localStorage.removeItem(KEYS.ACTIVE_CONTEXT); // Clear context on logout
     logger.setContext(null, null);
   },
 
@@ -293,178 +293,131 @@ export const StorageService = {
     return true;
   },
 
-  // --- TOKEN REQUESTS (DB OPERATIONS) ---
-  // Exposes raw DB operations for the API Service to use
-  
-  getTokenRequests: (): TokenRequest[] => getDB<TokenRequest>(KEYS.REQUESTS),
-  
-  saveTokenRequest: (request: TokenRequest) => {
-    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-    saveDB(KEYS.REQUESTS, [...requests, request]);
+  // --- PRODUCTIONS & CONTEXT ---
+
+  getProductions: (userId: string): Production[] => {
+    const all = getDB<Production>(KEYS.PRODUCTIONS);
+    return all.filter(p => p.userId === userId).sort((a,b) => b.createdAt - a.createdAt);
   },
 
-  updateTokenRequest: (request: TokenRequest) => {
-    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-    saveDB(KEYS.REQUESTS, requests.map(r => r.id === request.id ? request : r));
-  },
-
-  // --- ADMIN: REQUEST MANAGEMENT ---
-
-  adminUpdateRequestStatus: async (adminId: string, requestId: string, status: TokenRequestStatus): Promise<boolean> => {
-    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-    const target = requests.find(r => r.id === requestId);
-    
-    if (!target) return false;
-
-    target.status = status;
-    target.updatedAt = Date.now();
-    
-    saveDB(KEYS.REQUESTS, requests.map(r => r.id === requestId ? target : r));
-
-    let auditAction = 'UPDATE_REQUEST';
-    if (status === 'APPROVED') auditAction = 'APPROVE_REQUEST';
-    else if (status === 'REJECTED') auditAction = 'REJECT_REQUEST';
-    else if (status === 'CONTACTED') auditAction = 'CONTACT_REQUEST';
-
-    StorageService.logAudit(adminId, auditAction, undefined, requestId, { status, applicant: target.preferredUsername });
-    return true;
-  },
-
-  // --- ADMIN: USER PROVISIONING ---
-
-  adminCreateUser: async (adminId: string, username: string): Promise<{ success: boolean; user?: User; error?: string }> => {
-    // Force normalization for consistent lookup
-    const cleanUsername = normalizeUsername(username);
-    const users = getDB<User>(KEYS.USERS);
-    
-    if (users.find(u => normalizeUsername(u.username) === cleanUsername)) {
-      return { success: false, error: "Username taken." };
-    }
-
-    const newUser: User = {
-      id: crypto.randomUUID(),
-      username: cleanUsername, // Store normalized
-      status: 'ACTIVE',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastLoginAt: null
-    };
-
-    saveDB(KEYS.USERS, [...users, newUser]);
-    StorageService.logAudit(adminId, 'CREATE_USER', newUser.id, undefined, { username: cleanUsername });
-    
-    return { success: true, user: newUser };
-  },
-
-  adminIssueToken: async (adminId: string, userId: string, expiryDurationMs: number | null): Promise<string> => {
-    const salt = generateSalt();
-    const token = generateSecureToken(); // Raw hex token
-    const hash = await hashPassword(token, salt);
-
-    const newToken: AuthToken = {
+  createProduction: (userId: string, name: string): Production => {
+    const all = getDB<Production>(KEYS.PRODUCTIONS);
+    const newProd: Production = {
       id: crypto.randomUUID(),
       userId,
-      tokenHash: hash,
-      salt,
-      createdAt: Date.now(),
-      expiresAt: expiryDurationMs ? Date.now() + expiryDurationMs : null,
-      revokedAt: null,
-      lastUsedAt: null,
-      rotationCount: 0
+      name: name.trim(),
+      createdAt: Date.now()
     };
-
-    const tokens = getDB<AuthToken>(KEYS.TOKENS);
-    saveDB(KEYS.TOKENS, [...tokens, newToken]);
-
-    StorageService.logAudit(adminId, 'ISSUE_TOKEN', userId, newToken.id, { expiry: expiryDurationMs });
-    
-    return token; // Return raw token for one-time display
+    saveDB(KEYS.PRODUCTIONS, [...all, newProd]);
+    return newProd;
   },
 
-  adminRevokeToken: (adminId: string, tokenId: string) => {
-    const tokens = getDB<AuthToken>(KEYS.TOKENS);
-    saveDB(KEYS.TOKENS, tokens.map(t => t.id === tokenId ? { ...t, revokedAt: Date.now() } : t));
-    StorageService.logAudit(adminId, 'REVOKE_TOKEN', undefined, tokenId);
+  setActiveProduction: (userId: string, productionId: string) => {
+    const all = getDB<Record<string, string>>(KEYS.ACTIVE_CONTEXT);
+    // Note: getDB returns array but we want key-value for context? 
+    // Actually simplicity: store array of {userId, productionId}
+    interface UserContext { userId: string; productionId: string; }
+    let contexts = getDB<UserContext>(KEYS.ACTIVE_CONTEXT);
+    contexts = contexts.filter(c => c.userId !== userId);
+    contexts.push({ userId, productionId });
+    saveDB(KEYS.ACTIVE_CONTEXT, contexts);
   },
 
-  adminSetUserStatus: (adminId: string, userId: string, status: UserStatus) => {
-    const users = getDB<User>(KEYS.USERS);
-    saveDB(KEYS.USERS, users.map(u => u.id === userId ? { ...u, status, updatedAt: Date.now() } : u));
+  getActiveProduction: (userId: string): Production | null => {
+    interface UserContext { userId: string; productionId: string; }
+    const contexts = getDB<UserContext>(KEYS.ACTIVE_CONTEXT);
+    const ctx = contexts.find(c => c.userId === userId);
+    if (!ctx) return null;
     
-    if (status !== 'ACTIVE') {
-      const sessions = getDB<Session>(KEYS.SESSIONS);
-      saveDB(KEYS.SESSIONS, sessions.filter(s => s.userId !== userId));
+    const prods = getDB<Production>(KEYS.PRODUCTIONS);
+    return prods.find(p => p.id === ctx.productionId) || null;
+  },
+
+  // --- MIGRATION LOGIC ---
+  migrateLegacyTemplates: (userId: string, username: string) => {
+    // 1. Get templates for user that HAVE NO productionId
+    const allWrapper = getDB<StoredTemplate>(KEYS.TEMPLATES);
+    const userLegacy = allWrapper.filter(t => t.owner === username && !t.productionId);
+
+    if (userLegacy.length > 0) {
+      // 2. Check if "My Show" exists
+      let prods = getDB<Production>(KEYS.PRODUCTIONS);
+      let defaultProd = prods.find(p => p.userId === userId && p.name === "My Show");
+      
+      if (!defaultProd) {
+        defaultProd = {
+          id: crypto.randomUUID(),
+          userId,
+          name: "My Show",
+          createdAt: Date.now()
+        };
+        prods.push(defaultProd);
+        saveDB(KEYS.PRODUCTIONS, prods);
+      }
+
+      // 3. Assign
+      const updatedWrapper = allWrapper.map(t => {
+        if (t.owner === username && !t.productionId) {
+          return { ...t, productionId: defaultProd!.id };
+        }
+        return t;
+      });
+      saveDB(KEYS.TEMPLATES, updatedWrapper);
+      logger.info('MIGRATION_COMPLETE', { count: userLegacy.length, production: defaultProd.name });
     }
-
-    StorageService.logAudit(adminId, 'SET_USER_STATUS', userId, undefined, { status });
   },
 
-  adminForceLogout: (adminId: string, userId: string) => {
-    const sessions = getDB<Session>(KEYS.SESSIONS);
-    saveDB(KEYS.SESSIONS, sessions.filter(s => s.userId !== userId));
-    StorageService.logAudit(adminId, 'FORCE_LOGOUT', userId);
-  },
+  // --- TEMPLATES (RBAC + PRODUCTION SCOPE) ---
 
-  // --- DATA GETTERS FOR ADMIN ---
-  
-  getUsers: (): User[] => getDB(KEYS.USERS),
-  getTokens: (userId: string): AuthToken[] => {
-    const all = getDB<AuthToken>(KEYS.TOKENS);
-    return all.filter(t => t.userId === userId).sort((a,b) => b.createdAt - a.createdAt);
-  },
-  getAuditLogs: (): AuditLogEntry[] => {
-    const logs = getDB<AuditLogEntry>(KEYS.AUDIT_LOGS);
-    return logs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
-  },
-
-  logAudit: (adminId: string, action: string, targetUserId?: string, targetTokenId?: string, metadata?: any) => {
-    const logs = getDB<AuditLogEntry>(KEYS.AUDIT_LOGS);
-    const entry: AuditLogEntry = {
-      id: crypto.randomUUID(),
-      timestamp: Date.now(),
-      adminId,
-      action,
-      targetUserId,
-      targetTokenId,
-      metadata
-    };
-    saveDB(KEYS.AUDIT_LOGS, [entry, ...logs].slice(0, 500));
-  },
-
-  // --- TEMPLATES (RBAC IMPLEMENTED) ---
-
-  getTemplates: (username: string, role: 'ADMIN' | 'USER'): (Template & { ownerName?: string })[] => {
+  getTemplates: (username: string, role: 'ADMIN' | 'USER', productionId?: string): (Template & { ownerName?: string })[] => {
     const allWrapper = getDB<StoredTemplate>(KEYS.TEMPLATES);
     
     if (role === 'ADMIN') {
       return allWrapper.map(t => ({ ...t.template, ownerName: t.owner }));
     } else {
-      return allWrapper
-        .filter(t => t.owner === username)
-        .map(t => t.template);
+      let userTemplates = allWrapper.filter(t => t.owner === username);
+      // Filter by production if provided
+      if (productionId) {
+        userTemplates = userTemplates.filter(t => t.productionId === productionId);
+      }
+      return userTemplates.map(t => t.template);
     }
   },
 
-  saveTemplate: (username: string, template: Template, role: 'ADMIN' | 'USER'): boolean => {
+  saveTemplate: (username: string, template: Template, role: 'ADMIN' | 'USER', productionId?: string): boolean => {
     const cid = crypto.randomUUID();
     try {
       const allWrapper = getDB<StoredTemplate>(KEYS.TEMPLATES);
       const existingIndex = allWrapper.findIndex(t => t.template.id === template.id);
       
+      // If saving a new template, productionId is mandatory for USER
+      if (role !== 'ADMIN' && existingIndex === -1 && !productionId) {
+        logger.error('TEMPLATE_SAVE_NO_PROD', new Error('Production ID required'));
+        return false;
+      }
+
       if (existingIndex >= 0) {
+        // Update existing
         const existing = allWrapper[existingIndex];
         if (role !== 'ADMIN' && existing.owner !== username) {
           logger.warn('TEMPLATE_UPDATE_DENIED', { user: username, templateId: template.id }, cid);
           return false;
         }
-        allWrapper[existingIndex] = { owner: existing.owner, template };
+        // Preserve production ID if not passed, or update if passed
+        const finalProdId = productionId || existing.productionId;
+        allWrapper[existingIndex] = { owner: existing.owner, productionId: finalProdId, template };
         if (role === 'ADMIN') logger.audit('ADMIN_EDIT_TEMPLATE', { templateId: template.id, originalOwner: existing.owner }, cid);
       } else {
+        // Create New
         if (role !== 'ADMIN') {
-          const userTemplates = allWrapper.filter(t => t.owner === username);
-          if (userTemplates.length >= 40) return false;
+          // Check limit for this production
+          const prodTemplates = allWrapper.filter(t => t.owner === username && t.productionId === productionId);
+          if (prodTemplates.length >= MAX_TEMPLATES_PER_PRODUCTION) {
+             logger.warn('TEMPLATE_LIMIT_REACHED', { productionId }, cid);
+             return false;
+          }
         }
-        allWrapper.push({ owner: username, template });
+        allWrapper.push({ owner: username, productionId, template });
         if (role === 'ADMIN') logger.audit('ADMIN_CREATE_TEMPLATE', { templateId: template.id }, cid);
       }
 
@@ -492,6 +445,122 @@ export const StorageService = {
     } catch (e) {
       logger.error('TEMPLATE_DELETE_ERROR', e as Error, { templateId: id });
     }
+  },
+
+  // --- TOKEN REQUESTS (DB OPERATIONS) ---
+  
+  getTokenRequests: (): TokenRequest[] => getDB<TokenRequest>(KEYS.REQUESTS),
+  
+  saveTokenRequest: (request: TokenRequest) => {
+    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
+    saveDB(KEYS.REQUESTS, [...requests, request]);
+  },
+
+  updateTokenRequest: (request: TokenRequest) => {
+    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
+    saveDB(KEYS.REQUESTS, requests.map(r => r.id === request.id ? request : r));
+  },
+
+  // --- ADMIN METHODS (UNCHANGED) ---
+  adminUpdateRequestStatus: async (adminId: string, requestId: string, status: TokenRequestStatus): Promise<boolean> => {
+    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
+    const target = requests.find(r => r.id === requestId);
+    if (!target) return false;
+    target.status = status;
+    target.updatedAt = Date.now();
+    saveDB(KEYS.REQUESTS, requests.map(r => r.id === requestId ? target : r));
+    let auditAction = 'UPDATE_REQUEST';
+    if (status === 'APPROVED') auditAction = 'APPROVE_REQUEST';
+    else if (status === 'REJECTED') auditAction = 'REJECT_REQUEST';
+    else if (status === 'CONTACTED') auditAction = 'CONTACT_REQUEST';
+    StorageService.logAudit(adminId, auditAction, undefined, requestId, { status, applicant: target.preferredUsername });
+    return true;
+  },
+
+  adminCreateUser: async (adminId: string, username: string): Promise<{ success: boolean; user?: User; error?: string }> => {
+    const cleanUsername = normalizeUsername(username);
+    const users = getDB<User>(KEYS.USERS);
+    if (users.find(u => normalizeUsername(u.username) === cleanUsername)) {
+      return { success: false, error: "Username taken." };
+    }
+    const newUser: User = {
+      id: crypto.randomUUID(),
+      username: cleanUsername, // Store normalized
+      status: 'ACTIVE',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastLoginAt: null
+    };
+    saveDB(KEYS.USERS, [...users, newUser]);
+    StorageService.logAudit(adminId, 'CREATE_USER', newUser.id, undefined, { username: cleanUsername });
+    return { success: true, user: newUser };
+  },
+
+  adminIssueToken: async (adminId: string, userId: string, expiryDurationMs: number | null): Promise<string> => {
+    const salt = generateSalt();
+    const token = generateSecureToken(); // Raw hex token
+    const hash = await hashPassword(token, salt);
+    const newToken: AuthToken = {
+      id: crypto.randomUUID(),
+      userId,
+      tokenHash: hash,
+      salt,
+      createdAt: Date.now(),
+      expiresAt: expiryDurationMs ? Date.now() + expiryDurationMs : null,
+      revokedAt: null,
+      lastUsedAt: null,
+      rotationCount: 0
+    };
+    const tokens = getDB<AuthToken>(KEYS.TOKENS);
+    saveDB(KEYS.TOKENS, [...tokens, newToken]);
+    StorageService.logAudit(adminId, 'ISSUE_TOKEN', userId, newToken.id, { expiry: expiryDurationMs });
+    return token;
+  },
+
+  adminRevokeToken: (adminId: string, tokenId: string) => {
+    const tokens = getDB<AuthToken>(KEYS.TOKENS);
+    saveDB(KEYS.TOKENS, tokens.map(t => t.id === tokenId ? { ...t, revokedAt: Date.now() } : t));
+    StorageService.logAudit(adminId, 'REVOKE_TOKEN', undefined, tokenId);
+  },
+
+  adminSetUserStatus: (adminId: string, userId: string, status: UserStatus) => {
+    const users = getDB<User>(KEYS.USERS);
+    saveDB(KEYS.USERS, users.map(u => u.id === userId ? { ...u, status, updatedAt: Date.now() } : u));
+    if (status !== 'ACTIVE') {
+      const sessions = getDB<Session>(KEYS.SESSIONS);
+      saveDB(KEYS.SESSIONS, sessions.filter(s => s.userId !== userId));
+    }
+    StorageService.logAudit(adminId, 'SET_USER_STATUS', userId, undefined, { status });
+  },
+
+  adminForceLogout: (adminId: string, userId: string) => {
+    const sessions = getDB<Session>(KEYS.SESSIONS);
+    saveDB(KEYS.SESSIONS, sessions.filter(s => s.userId !== userId));
+    StorageService.logAudit(adminId, 'FORCE_LOGOUT', userId);
+  },
+
+  getUsers: (): User[] => getDB(KEYS.USERS),
+  getTokens: (userId: string): AuthToken[] => {
+    const all = getDB<AuthToken>(KEYS.TOKENS);
+    return all.filter(t => t.userId === userId).sort((a,b) => b.createdAt - a.createdAt);
+  },
+  getAuditLogs: (): AuditLogEntry[] => {
+    const logs = getDB<AuditLogEntry>(KEYS.AUDIT_LOGS);
+    return logs.sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
+  },
+
+  logAudit: (adminId: string, action: string, targetUserId?: string, targetTokenId?: string, metadata?: any) => {
+    const logs = getDB<AuditLogEntry>(KEYS.AUDIT_LOGS);
+    const entry: AuditLogEntry = {
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      adminId,
+      action,
+      targetUserId,
+      targetTokenId,
+      metadata
+    };
+    saveDB(KEYS.AUDIT_LOGS, [entry, ...logs].slice(0, 500));
   },
 
   // --- GAME STATE ---

@@ -40,6 +40,13 @@ export interface Template {
   createdAt: number;
 }
 
+export interface Production {
+  id: string;
+  userId: string; // Links to User.id (not username)
+  name: string;
+  createdAt: number;
+}
+
 export interface Player {
   id: number;
   name: string;
@@ -55,12 +62,14 @@ export interface GameState {
   categories: Category[];
   players: Player[];
   activePlayerIndex: number;
+  askedPlayerIndex?: number; // The player who was active when the question was selected
   currentQuestion: { categoryId: string; questionId: string } | null;
   currentQuestionState: QuestionState | null; 
   activityLog: string[];
   timer: number;
   isTimerRunning: boolean;
   directorMode: boolean; // Is director panel open
+  productionName?: string; // Snapshot of production name
 }
 
 // --- AUTH & ADMIN SYSTEM ---
