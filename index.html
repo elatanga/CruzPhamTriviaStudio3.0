@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>CruzPham Trivia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              gold: {
+                100: '#FBF5E6',
+                200: '#F4E6BF',
+                300: '#DDB856',
+                400: '#C69C2E',
+                500: '#B48811', // Darker Gold Base
+                600: '#8A6605',
+                700: '#604600',
+                800: '#3D2C00',
+                900: '#1F1600',
+              },
+              luxury: {
+                black: '#050505',
+                dark: '#0A0A0A',
+                panel: '#111111',
+                glass: 'rgba(10, 10, 10, 0.95)',
+              }
+            },
+            fontFamily: {
+              serif: ['Cinzel', 'serif'],
+              sans: ['Lato', 'sans-serif'],
+            },
+            backgroundImage: {
+              'gold-gradient': 'linear-gradient(135deg, #F4E6BF 0%, #DDB856 50%, #B48811 100%)',
+              'gold-gradient-text': 'linear-gradient(to bottom, #F4E6BF, #DDB856)',
+              'luxury-radial': 'radial-gradient(circle at center, #1a1a1a 0%, #000000 100%)',
+            },
+            boxShadow: {
+              'glow': '0 0 15px rgba(221, 184, 86, 0.3)',
+              'glow-strong': '0 0 25px rgba(221, 184, 86, 0.6)',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #050505;
+        color: #DDB856;
+        overflow: hidden; /* ABSOLUTE UI RULE: NO SCROLLING */
+        height: 100vh;
+        width: 100vw;
+      }
+      /* Text clamp utility for responsiveness */
+      .text-responsive-base { font-size: clamp(10px, 1.5vh, 16px); }
+      .text-responsive-lg { font-size: clamp(14px, 2.5vh, 24px); }
+      .text-responsive-xl { font-size: clamp(20px, 4vh, 48px); }
+      .text-responsive-hero { font-size: clamp(24px, 6vh, 80px); }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root" class="h-full w-full"></div>
+  </body>
+</html>
