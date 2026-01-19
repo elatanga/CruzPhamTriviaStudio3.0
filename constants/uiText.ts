@@ -5,6 +5,9 @@ export const UI_TEXT = {
     appName: "CRUZPHAM TRIVIA",
     footer: "CREATED BY EL CRUZPHAM • POWERED BY CRUZPHAM TRIVIA STUDIOS"
   },
+  common: {
+    doubleOrNothing: "Double Or Nothing"
+  },
   auth: {
     tabs: {
       login: "LOG IN",
@@ -61,7 +64,7 @@ export const UI_TEXT = {
     aiButton: "AUTO-FILL",
     save: "SAVE SHOW",
     cancel: "EXIT",
-    don: "D.O.N"
+    don: "Double Or Nothing"
   },
   game: {
     live: "LIVE",

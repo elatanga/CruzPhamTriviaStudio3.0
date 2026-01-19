@@ -322,7 +322,7 @@ const DirectorPanel: React.FC<{
                               onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { isDoubleOrNothing: !q.isDoubleOrNothing })}
                               className={`text-[9px] px-2 py-1 border ${q.isDoubleOrNothing ? 'border-red-500 text-red-500' : 'border-zinc-700 text-zinc-700'}`}
                             >
-                              DOUBLE OR NOTHING
+                              {UI_TEXT.common.doubleOrNothing.toUpperCase()}
                             </button>
                         </div>
                         <div className="flex flex-col gap-2 mt-2">
@@ -681,7 +681,7 @@ function CruzPhamTriviaApp() {
             if (q.id === questionId) {
               if (action === 'AWARD') {
                 points = q.isDoubleOrNothing ? q.points * 2 : q.points;
-                log = `${prev.players[prev.activePlayerIndex].name} +${points}${q.isDoubleOrNothing ? ' [D.O.N!]' : ''}`;
+                log = `${prev.players[prev.activePlayerIndex].name} +${points}${q.isDoubleOrNothing ? ` [${UI_TEXT.common.doubleOrNothing}]` : ''}`;
                 logger.audit('GAME_POINTS_AWARDED', { player: prev.activePlayerIndex, points, double: q.isDoubleOrNothing }, cid);
                 return { ...q, state: QuestionState.AWARDED };
               }
@@ -1210,9 +1210,9 @@ function CruzPhamTriviaApp() {
                                nc[ci].questions[qi].isDoubleOrNothing = !nc[ci].questions[qi].isDoubleOrNothing; 
                                setEditingTemplate({...editingTemplate, categories: nc});
                              }}
-                             className={`px-1 rounded border ${q.isDoubleOrNothing ? 'text-red-500 border-red-500' : 'text-zinc-700 border-zinc-800 hover:text-zinc-400'}`}
+                             className={`px-1 py-1 rounded border whitespace-normal text-[8px] leading-tight h-auto ${q.isDoubleOrNothing ? 'text-red-500 border-red-500' : 'text-zinc-700 border-zinc-800 hover:text-zinc-400'}`}
                           >
-                             {q.isDoubleOrNothing ? UI_TEXT.editor.don : 'NORMAL'}
+                             {q.isDoubleOrNothing ? UI_TEXT.common.doubleOrNothing : 'NORMAL'}
                           </button>
                         </div>
                         <textarea className="bg-black text-zinc-300 text-xs p-1 resize-none h-12 border border-zinc-800 focus:border-gold-600 outline-none" value={q.question} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].question = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
@@ -1346,7 +1346,7 @@ function CruzPhamTriviaApp() {
                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest">ACTIVE</span>
                          <span className="text-xs font-bold text-gold-300 truncate w-24">{activePlayer.name}</span>
                       </div>
-                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex + 1) % 8 }))}><Icons.ChevronRight/></Button>
+                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex - 1 + 8) % 8 }))}><Icons.ChevronRight/></Button>
                    </div>
                    <div className="flex items-center gap-2">
                       <Button variant="danger" className="px-3 py-1 text-lg font-bold" onClick={() => setGameState(p => { const pl = [...p.players]; pl[p.activePlayerIndex].score -= 100; pl[p.activePlayerIndex].streak = 0; return {...p, players: pl}; })}>-</Button>
@@ -1416,7 +1416,7 @@ function CruzPhamTriviaApp() {
                       {isVoided && <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center pointer-events-none"><span className="text-red-500 font-bold text-4xl tracking-[1em] border-4 border-red-900/50 p-8 transform -rotate-12">VOIDED</span></div>}
                       
                       {q.isDoubleOrNothing && !isVoided && (
-                        <div className="absolute top-4 md:top-8 px-4 py-1 md:px-6 md:py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-sm md:text-xl skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">{UI_TEXT.editor.don}</div>
+                        <div className="absolute top-4 md:top-8 px-4 py-1 md:px-6 md:py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-xs md:text-lg whitespace-nowrap skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">{UI_TEXT.common.doubleOrNothing}</div>
                       )}
                       
                       <h2 className={`font-serif font-bold leading-tight drop-shadow-lg text-responsive-xl md:text-responsive-hero max-w-4xl my-auto ${isVoided ? 'text-zinc-700 blur-sm' : 'text-white'}`}>{q.question}</h2>
