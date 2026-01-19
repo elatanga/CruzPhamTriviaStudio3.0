@@ -23,11 +23,19 @@ export interface Category {
   questions: Question[]; // Ordered by points
 }
 
+export interface BoardConfig {
+  version: number;
+  columns: number; // 1-8
+  rows: number;    // 1-10
+  pointValues: number[];
+}
+
 export interface Template {
   id: string;
   name: string;
-  rows: number;
-  cols: number;
+  rows: number; // Kept for legacy compatibility
+  cols: number; // Kept for legacy compatibility
+  boardConfig?: BoardConfig; // New config object
   categories: Category[];
   createdAt: number;
 }

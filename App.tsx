@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  GameState, Template, Category, Question, QuestionState, Player, User, Session
+  GameState, Template, Category, Question, QuestionState, Player, User, Session, BoardConfig
 } from './types';
 import { StorageService } from './services/storageService';
 import { generateTriviaContent } from './services/geminiService';
@@ -326,6 +326,8 @@ function CruzPhamTriviaApp() {
   });
 
   // Editor State
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+  const [setupConfig, setSetupConfig] = useState({ cols: 5, rows: 5 });
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -468,7 +470,10 @@ function CruzPhamTriviaApp() {
     logger.info('GAME_START', { templateId: template.id, name: template.name }, cid);
     soundService.playClick();
     
-    // Deep copy and assign ONE random Double Or Nothing per category
+    // Check if template has explicit Double Or Nothing set (Version 2)
+    const hasExplicitDon = template.categories.some(c => c.questions.some(q => q.isDoubleOrNothing));
+
+    // Deep copy and assign ONE random Double Or Nothing per category if not set
     const gameCategories = template.categories.map(c => {
       const doubleIndex = Math.floor(Math.random() * c.questions.length);
       return {
@@ -476,7 +481,8 @@ function CruzPhamTriviaApp() {
         questions: c.questions.map((q, idx) => ({ 
           ...q, 
           state: QuestionState.AVAILABLE,
-          isDoubleOrNothing: idx === doubleIndex // Randomly assign
+          // Use explicit if available, otherwise random
+          isDoubleOrNothing: hasExplicitDon ? q.isDoubleOrNothing : (idx === doubleIndex)
         }))
       };
     });
@@ -776,30 +782,53 @@ function CruzPhamTriviaApp() {
 
   if (view === 'DASHBOARD') {
     const pageTemplates = templates.slice(dashboardPage * ITEMS_PER_PAGE, (dashboardPage + 1) * ITEMS_PER_PAGE);
-    const createNew = () => {
-      // Logic for new template creation with configurable rows/cols
-      const rows = 5; // Default
-      const cols = 5; // Default
+    
+    // Step 1: Initialize Creation with Setup Modal
+    const startCreation = () => {
+      soundService.playClick();
+      setSetupConfig({ cols: 5, rows: 5 });
+      setIsSetupOpen(true);
+    };
+
+    // Step 2: Generate Template from Config
+    const handleCreateFromSetup = () => {
+      const rows = setupConfig.rows;
+      const cols = setupConfig.cols;
+      
       const newT: Template = { 
         id: crypto.randomUUID(), 
         name: "UNTITLED SHOW", 
         rows, 
-        cols, 
+        cols,
+        boardConfig: {
+          version: 2,
+          columns: cols,
+          rows: rows,
+          pointValues: Array.from({length: rows}, (_, i) => Math.min((i + 1) * 100, 1000))
+        },
         createdAt: Date.now(), 
-        categories: Array(cols).fill(0).map((_,i)=>({
-          id: crypto.randomUUID(), 
-          name:`CAT ${i+1}`, 
-          questions: Array(rows).fill(0).map((_,j)=>({
-            id:crypto.randomUUID(), 
-            question:"Edit Me", 
-            answer:"Answer", 
-            points: Math.min((j+1)*100, 1000), // Cap base points at 1000
-            state:QuestionState.AVAILABLE, 
-            isDoubleOrNothing:false
-          }))
-        })) 
+        categories: Array(cols).fill(0).map((_, i) => {
+           // Randomly assign one Double or Nothing per category for the template default
+           const doubleIndex = Math.floor(Math.random() * rows);
+           return {
+              id: crypto.randomUUID(), 
+              name: `CAT ${i+1}`, 
+              questions: Array(rows).fill(0).map((_, j) => ({
+                id: crypto.randomUUID(), 
+                question: "Edit Me", 
+                answer: "Answer", 
+                points: Math.min((j + 1) * 100, 1000), 
+                state: QuestionState.AVAILABLE, 
+                isDoubleOrNothing: j === doubleIndex
+              }))
+           };
+        }) 
       };
-      setEditingTemplate(newT); setIsEditorOpen(true); soundService.playClick();
+      
+      setEditingTemplate(newT); 
+      setIsSetupOpen(false);
+      setIsEditorOpen(true); 
+      soundService.playClick();
     };
 
     return (
@@ -808,7 +837,7 @@ function CruzPhamTriviaApp() {
         <div className="flex-1 p-6 flex flex-col min-h-0">
           <div className="flex justify-between items-center mb-4 shrink-0">
             <h2 className="text-2xl font-serif text-gold-200 tracking-widest">SHOW LIBRARY</h2>
-            <Button onClick={createNew} variant="primary">NEW SHOW</Button>
+            <Button onClick={startCreation} variant="primary">NEW SHOW</Button>
           </div>
           
           <div className="flex-1 grid grid-cols-2 md:grid-cols-4 grid-rows-2 gap-4 min-h-0">
@@ -842,6 +871,64 @@ function CruzPhamTriviaApp() {
         </div>
         <Footer />
         
+        {/* BOARD SETUP MODAL */}
+        {isSetupOpen && (
+           <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-6">
+              <div className="w-full max-w-4xl bg-luxury-panel border border-gold-600 shadow-glow-strong flex flex-col md:flex-row rounded-sm overflow-hidden animate-in fade-in zoom-in duration-300">
+                 {/* LEFT: Controls */}
+                 <div className="md:w-1/3 p-8 border-r border-gold-900/50 flex flex-col gap-8 bg-gradient-to-br from-luxury-dark to-black">
+                    <h2 className="text-xl font-serif text-gold-400 tracking-widest border-b border-gold-800 pb-2">PRODUCTION SETUP</h2>
+                    
+                    <div className="space-y-4">
+                       <div>
+                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">CATEGORIES (COLUMNS)</label>
+                          <div className="flex items-center gap-4">
+                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, cols: Math.max(1, p.cols - 1)}))}>-</Button>
+                             <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.cols}</span>
+                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, cols: Math.min(8, p.cols + 1)}))}>+</Button>
+                          </div>
+                       </div>
+                       
+                       <div>
+                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">CLUES PER CATEGORY (ROWS)</label>
+                          <div className="flex items-center gap-4">
+                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.max(1, p.rows - 1)}))}>-</Button>
+                             <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.rows}</span>
+                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.min(10, p.rows + 1)}))}>+</Button>
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="mt-auto flex flex-col gap-3">
+                       <Button variant="primary" onClick={handleCreateFromSetup} className="py-4 text-base">INITIALIZE GRID</Button>
+                       <Button variant="ghost" onClick={() => setIsSetupOpen(false)}>CANCEL</Button>
+                    </div>
+                 </div>
+
+                 {/* RIGHT: Preview */}
+                 <div className="md:w-2/3 p-8 bg-black flex flex-col items-center justify-center relative">
+                    <span className="absolute top-4 right-4 text-[10px] text-zinc-600 uppercase tracking-widest">PREVIEW</span>
+                    <div className="w-full max-w-lg aspect-square flex gap-1 justify-center p-4 border border-zinc-800 rounded">
+                       {Array(setupConfig.cols).fill(0).map((_, i) => (
+                          <div key={i} className="flex flex-col gap-1 w-full max-w-[60px]">
+                             <div className="h-8 bg-gold-900/30 border border-gold-900 flex items-center justify-center">
+                                <span className="text-[6px] text-gold-700">CAT</span>
+                             </div>
+                             <div className="flex-1 flex flex-col gap-1">
+                                {Array(setupConfig.rows).fill(0).map((_, j) => (
+                                   <div key={j} className="flex-1 bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                                      <span className="text-[6px] text-zinc-700">{Math.min((j+1)*100, 1000)}</span>
+                                   </div>
+                                ))}
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 </div>
+              </div>
+           </div>
+        )}
+
         {/* Editor Modal */}
         {isEditorOpen && editingTemplate && (
           <div className="absolute inset-0 z-50 bg-black flex flex-col">
@@ -879,15 +966,25 @@ function CruzPhamTriviaApp() {
                  }}>SAVE</Button>
                </div>
             </div>
+            {/* Dynamic Grid Layout for Editor */}
             <div className="flex-1 overflow-hidden p-4 grid gap-4" style={{ gridTemplateColumns: `repeat(${editingTemplate.cols}, minmax(200px, 1fr))` }}>
                {editingTemplate.categories.map((c, ci) => (
-                 <div key={c.id} className="flex flex-col gap-2 overflow-y-auto pb-10">
+                 <div key={c.id} className="flex flex-col gap-2 overflow-y-auto pb-10 custom-scrollbar">
                     <input className="bg-luxury-dark border border-gold-900 text-center text-gold-300 font-bold py-2" value={c.name} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].name = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
                     {c.questions.map((q, qi) => (
-                      <div key={q.id} className="bg-luxury-panel border border-zinc-900 p-2 flex flex-col gap-1">
-                        <div className="flex justify-between text-[10px] text-zinc-500">
+                      <div key={q.id} className={`bg-luxury-panel border p-2 flex flex-col gap-1 ${q.isDoubleOrNothing ? 'border-red-900/50 bg-red-900/10' : 'border-zinc-900'}`}>
+                        <div className="flex justify-between items-center text-[10px] text-zinc-500">
                           <span>{q.points}</span>
-                          <span className="text-zinc-700">AUTO</span>
+                          <button 
+                             onClick={() => {
+                               const nc = [...editingTemplate.categories]; 
+                               nc[ci].questions[qi].isDoubleOrNothing = !nc[ci].questions[qi].isDoubleOrNothing; 
+                               setEditingTemplate({...editingTemplate, categories: nc});
+                             }}
+                             className={`px-1 rounded border ${q.isDoubleOrNothing ? 'text-red-500 border-red-500' : 'text-zinc-700 border-zinc-800 hover:text-zinc-400'}`}
+                          >
+                             {q.isDoubleOrNothing ? 'D.O.N' : 'NORMAL'}
+                          </button>
                         </div>
                         <textarea className="bg-black text-zinc-300 text-xs p-1 resize-none h-12 border border-zinc-800 focus:border-gold-600 outline-none" value={q.question} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].question = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
                         <input className="bg-black text-green-600 text-xs p-1 border border-zinc-800 focus:border-gold-600 outline-none" value={q.answer} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].answer = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
