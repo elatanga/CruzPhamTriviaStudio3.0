@@ -49,33 +49,94 @@ export interface Player {
 
 export interface GameState {
   isActive: boolean;
-  gameTitle: string; // NEW: Live editable title
+  eventName: string; // The specific event name (e.g., "Friday Night Trivia")
+  gameTitle: string; // Usually the template name
   templateId: string | null;
   categories: Category[];
   players: Player[];
   activePlayerIndex: number;
   currentQuestion: { categoryId: string; questionId: string } | null;
-  currentQuestionState: QuestionState | null; // NEW: Single source of truth for UI gating
+  currentQuestionState: QuestionState | null; 
   activityLog: string[];
   timer: number;
   isTimerRunning: boolean;
   directorMode: boolean; // Is director panel open
 }
 
-export interface User {
+// --- AUTH & ADMIN SYSTEM ---
+
+export type UserStatus = 'ACTIVE' | 'REVOKED' | 'SUSPENDED';
+
+export interface Admin {
+  id: string;
   username: string;
-  passwordHash: string; // Stored securely
+  passwordHash: string;
   salt: string;
   createdAt: number;
+  lastLoginAt: number | null;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  status: UserStatus;
+  createdAt: number;
+  updatedAt: number;
+  lastLoginAt: number | null;
+  notes?: string;
+}
+
+export interface AuthToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  salt: string;
+  label?: string;
+  createdAt: number;
+  expiresAt: number | null; // null = never
+  revokedAt: number | null;
+  lastUsedAt: number | null;
+  rotationCount: number;
 }
 
 export interface Session {
   sessionId: string;
+  userId: string;
+  userType: 'ADMIN' | 'USER';
   username: string;
   userAgent: string;
   createdAt: number;
   lastHeartbeat: number;
   expiresAt: number;
+}
+
+export type TokenRequestStatus = 'PENDING' | 'CONTACTED' | 'APPROVED' | 'REJECTED';
+
+export interface TokenRequest {
+  id: string;
+  firstName: string;
+  lastName: string;
+  tiktokHandle: string;
+  phoneNumber: string; // New field for contact
+  preferredUsername: string;
+  status: TokenRequestStatus;
+  emailStatus: 'PENDING' | 'SENT' | 'FAILED';
+  createdAt: number;
+  updatedAt: number;
+  deviceHash: string; // For rate limiting
+  ipHash?: string; // Simulated IP hash
+  adminNotes?: string;
+  lastError?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: number;
+  adminId: string;
+  action: string;
+  targetUserId?: string;
+  targetTokenId?: string;
+  metadata?: any;
 }
 
 // For AI Generation
