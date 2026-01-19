@@ -6,7 +6,8 @@ export const UI_TEXT = {
     footer: "CREATED BY EL CRUZPHAM • POWERED BY CRUZPHAM TRIVIA STUDIOS"
   },
   common: {
-    doubleOrNothing: "Double Or Nothing"
+    doubleOrNothing: "Double Or Nothing",
+    reconnecting: "RESTORING SESSION..."
   },
   auth: {
     tabs: {
@@ -34,7 +35,8 @@ export const UI_TEXT = {
     errors: {
       rateLimit: "Too many attempts. Please wait a moment.",
       invalid: "Identity or Token incorrect.",
-      system: "Studio connection error."
+      system: "Studio connection error.",
+      expired: "Session expired. Please log in again."
     },
     offline: "STUDIO DISCONNECTED"
   },

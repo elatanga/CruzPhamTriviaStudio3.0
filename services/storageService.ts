@@ -1,5 +1,5 @@
 
-import { Template, User, Session, AppError } from '../types';
+import { Template, User, Session, AppError, GameState } from '../types';
 import { logger } from './loggerService';
 
 // --- CONSTANTS ---
@@ -7,7 +7,8 @@ const KEYS = {
   USERS: 'cruzphamtrivia_users_v2',
   SESSIONS: 'cruzphamtrivia_sessions_v2',
   TEMPLATES: 'cruzphamtrivia_templates_v2',
-  TICKETS: 'cruzphamtrivia_detach_tickets_v1' // Shared storage for tickets
+  TICKETS: 'cruzphamtrivia_detach_tickets_v1',
+  GAME_STATE: 'cruzphamtrivia_gamestate_v2' // Persistence for active game
 };
 
 const SESSION_TTL = 30 * 60 * 1000; 
@@ -177,12 +178,52 @@ export const StorageService = {
     }
   },
 
+  restoreSession: async (sessionId: string): Promise<Session | null> => {
+    try {
+      const sessions = getDB<Session>(KEYS.SESSIONS);
+      const session = sessions.find(s => s.sessionId === sessionId);
+
+      if (!session) {
+        logger.warn('SESSION_RESTORE_NOT_FOUND', { sessionId });
+        return null;
+      }
+
+      // Check Expiry (allow 1 minute grace period for refresh latency)
+      if (Date.now() > session.expiresAt + 60000) {
+        logger.warn('SESSION_RESTORE_EXPIRED', { sessionId });
+        return null;
+      }
+
+      // Refresh expiration on successful restore
+      session.lastHeartbeat = Date.now();
+      session.expiresAt = Date.now() + SESSION_TTL;
+      
+      // Update DB
+      const index = sessions.findIndex(s => s.sessionId === sessionId);
+      sessions[index] = session;
+      saveDB(KEYS.SESSIONS, sessions);
+
+      logger.setContext(session.sessionId, session.username);
+      logger.info('SESSION_RESTORED', { sessionId });
+      
+      return session;
+    } catch (e) {
+      logger.error('SESSION_RESTORE_ERROR', e as Error);
+      return null;
+    }
+  },
+
   logout: async (sessionId: string) => {
     logger.info('AUTH_LOGOUT', { sessionId });
     try {
       const sessions = getDB<Session>(KEYS.SESSIONS);
       const newSessions = sessions.filter(s => s.sessionId !== sessionId);
       saveDB(KEYS.SESSIONS, newSessions);
+      
+      // Also clear active game state for this session context if we were using it per-session logic
+      // But for this app, we clear the global game state key for simplicity of single user
+      localStorage.removeItem(KEYS.GAME_STATE);
+      
       logger.setContext(null, null);
     } catch (e) {
       logger.error('AUTH_LOGOUT_ERROR', e as Error);
@@ -262,6 +303,30 @@ export const StorageService = {
     logger.setContext(session.sessionId, session.username);
     
     return session;
+  },
+
+  // --- GAME STATE PERSISTENCE ---
+
+  saveGameState: (sessionId: string, gameState: GameState) => {
+    try {
+      localStorage.setItem(`${KEYS.GAME_STATE}_${sessionId}`, JSON.stringify(gameState));
+    } catch (e) {
+      logger.error('GAME_STATE_SAVE_ERROR', e as Error);
+    }
+  },
+
+  getGameState: (sessionId: string): GameState | null => {
+    try {
+      const data = localStorage.getItem(`${KEYS.GAME_STATE}_${sessionId}`);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      logger.error('GAME_STATE_LOAD_ERROR', e as Error);
+      return null;
+    }
+  },
+
+  clearGameState: (sessionId: string) => {
+    localStorage.removeItem(`${KEYS.GAME_STATE}_${sessionId}`);
   },
 
   // --- TEMPLATES ---

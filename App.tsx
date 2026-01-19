@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { 
   GameState, Template, Category, Question, QuestionState, Player, User, Session, BoardConfig
 } from './types';
@@ -9,6 +9,8 @@ import { soundService } from './services/soundService';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { UI_TEXT } from './constants/uiText';
+
+const CLIENT_SESSION_KEY = 'cruzphamtrivia_client_session_v1';
 
 // --- SVGs & Icons ---
 const Icons = {
@@ -94,31 +96,50 @@ const DirectorPanel: React.FC<{
   const [tab, setTab] = useState<'GAME' | 'PLAYERS' | 'QUESTIONS' | 'LOG'>('GAME');
   const [editingQuestion, setEditingQuestion] = useState<{cIndex: number, qIndex: number} | null>(null);
 
-  const updateLog = (action: string) => {
-    return [action, ...gameState.activityLog].slice(0, 15);
+  const updateLog = (action: string, log: string[]) => {
+    return [action, ...log].slice(0, 15);
   };
 
   const updateTitle = (newTitle: string) => {
     setGameState(prev => ({
       ...prev,
       gameTitle: newTitle,
-      activityLog: updateLog(`TITLE CHANGED: ${newTitle}`)
+      activityLog: updateLog(`TITLE CHANGED: ${newTitle}`, prev.activityLog)
     }));
   };
 
+  // IMMUTABLE PLAYER UPDATE
   const updatePlayer = (idx: number, updates: Partial<Player>) => {
     setGameState(prev => {
-      const ps = [...prev.players];
-      ps[idx] = { ...ps[idx], ...updates };
-      return { ...prev, players: ps, activityLog: updates.score !== undefined ? updateLog(`${ps[idx].name} SCORE: ${updates.score}`) : prev.activityLog };
+      const updatedPlayers = prev.players.map((p, i) => i === idx ? { ...p, ...updates } : p);
+      return { 
+        ...prev, 
+        players: updatedPlayers, 
+        activityLog: updates.score !== undefined ? updateLog(`${prev.players[idx].name} SCORE: ${updates.score}`, prev.activityLog) : prev.activityLog 
+      };
     });
   };
 
+  // IMMUTABLE QUESTION UPDATE
   const updateQuestion = (cIndex: number, qIndex: number, updates: Partial<Question>) => {
     setGameState(prev => {
-      const cats = [...prev.categories];
-      cats[cIndex].questions[qIndex] = { ...cats[cIndex].questions[qIndex], ...updates };
-      return { ...prev, categories: cats, activityLog: updateLog(`Q EDITED: ${cats[cIndex].name} $${cats[cIndex].questions[qIndex].points}`) };
+      const newCategories = prev.categories.map((cat, i) => {
+          if (i !== cIndex) return cat;
+          const newQuestions = cat.questions.map((q, j) => {
+              if (j !== qIndex) return q;
+              return { ...q, ...updates };
+          });
+          return { ...cat, questions: newQuestions };
+      });
+      
+      const catName = prev.categories[cIndex]?.name || 'CAT';
+      const points = prev.categories[cIndex]?.questions[qIndex]?.points || 0;
+      
+      return { 
+        ...prev, 
+        categories: newCategories, 
+        activityLog: updateLog(`Q EDITED: ${catName} $${points}`, prev.activityLog) 
+      };
     });
   };
 
@@ -126,11 +147,10 @@ const DirectorPanel: React.FC<{
 
   const forceResolve = (action: 'AWARD' | 'VOID' | 'RETURN') => {
     if (!gameState.currentQuestion) return;
-    if (action !== 'RETURN' && !isRevealed && action !== 'VOID') {
-       return; 
-    }
-
+    
+    // Director override allows force actions anytime, but let's keep basic logic sane
     const { categoryId, questionId } = gameState.currentQuestion;
+    
     setGameState(prev => {
        const cats = prev.categories.map(c => 
          c.id === categoryId ? { 
@@ -161,7 +181,7 @@ const DirectorPanel: React.FC<{
          players: newPlayers,
          currentQuestion: null,
          currentQuestionState: null,
-         activityLog: updateLog(`FORCE ${action}: ${categoryId}`)
+         activityLog: updateLog(`FORCE ${action}: ${categoryId}`, prev.activityLog)
        };
     });
   };
@@ -354,6 +374,122 @@ const DirectorPanel: React.FC<{
   );
 };
 
+// --- SAFE GAME BOARD (ISOLATED COMPONENT) ---
+const SafeGameBoard: React.FC<{
+  gameState: GameState;
+  activeMobileTab: string;
+  selectQuestion: (cid: string, qid: string) => void;
+  setActiveMobileTab: (tab: 'BOARD' | 'LEADERBOARD') => void;
+  logRender: () => void;
+}> = memo(({ gameState, activeMobileTab, selectQuestion, setActiveMobileTab, logRender }) => {
+  logRender();
+
+  // Defensive Checks: If data is missing (e.g. during sync), show loader instead of crashing
+  if (!gameState.categories || !gameState.players) {
+    logger.warn('GAME_BOARD_MISSING_DATA', { categories: !!gameState.categories, players: !!gameState.players });
+    return <div className="flex-1 flex items-center justify-center text-gold-500 animate-pulse">SYNCHRONIZING BOARD...</div>;
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 relative z-0">
+          {/* MOBILE TABS (ONLY VISIBLE ON MOBILE) */}
+          <div className="md:hidden flex h-10 border-b border-zinc-900 bg-luxury-panel shrink-0">
+            <button onClick={() => setActiveMobileTab('BOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'BOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>BOARD</button>
+            <button onClick={() => setActiveMobileTab('LEADERBOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'LEADERBOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>LEADERBOARD</button>
+          </div>
+
+          {/* STAGE CONTENT CONTAINER */}
+          <div className="flex-1 relative overflow-hidden flex flex-col p-2 md:p-4 gap-4">
+              
+              {/* BOARD GRID (Visible if Board Tab active OR on Desktop) */}
+              <div className={`
+                ${(activeMobileTab === 'BOARD' || window.innerWidth >= 768) ? 'flex' : 'hidden'}
+                flex-1 grid gap-1 md:gap-2 min-h-0 overflow-auto custom-scrollbar
+              `} style={{ gridTemplateColumns: `repeat(${gameState.categories.length}, minmax(100px, 1fr))` }}>
+                {gameState.categories.map((cat, i) => (
+                  <div key={cat.id || i} className="flex flex-col h-full gap-1 lg:gap-2">
+                    {/* Header Tile */}
+                    <div className="h-12 md:h-[12%] min-h-[40px] bg-gradient-to-b from-luxury-panel to-black border border-gold-900 flex items-center justify-center p-1 shadow-lg shrink-0">
+                      <span className="font-serif font-bold text-center text-gold-300 leading-tight uppercase break-words text-responsive-base line-clamp-2">{cat.name || '...'}</span>
+                    </div>
+                    {/* Question Tiles */}
+                    <div className="flex-1 flex flex-col gap-1 lg:gap-2 overflow-y-auto">
+                      {cat.questions.map(q => {
+                        const isAvail = q.state === QuestionState.AVAILABLE || q.state === QuestionState.ACTIVE;
+                        return (
+                          <button 
+                            key={q.id}
+                            onClick={() => selectQuestion(cat.id, q.id)}
+                            disabled={!isAvail}
+                            className={`
+                              flex-1 min-h-[40px] relative group flex items-center justify-center border transition-all duration-300 shrink-0
+                              ${q.state === QuestionState.ACTIVE ? 'bg-gold-500 border-gold-300 shadow-glow-strong z-10' : 
+                                q.state === QuestionState.VOIDED ? 'bg-zinc-900/50 border-red-900/30 text-red-700 cursor-not-allowed' :
+                                isAvail ? 'bg-luxury-panel border-gold-900/40 hover:bg-gold-900/20 hover:border-gold-500' : 'opacity-0 pointer-events-none'}
+                            `}
+                          >
+                             <span className={`font-serif font-black tracking-tighter text-responsive-lg ${q.state === QuestionState.ACTIVE ? 'text-black' : 'text-gold-500 shadow-black drop-shadow-md'}`}>
+                               {q.state === QuestionState.VOIDED ? <span className="text-[10px] font-bold tracking-widest text-red-900/50 transform -rotate-12">VOID</span> : (isAvail ? q.points : '')}
+                             </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* LEADERBOARD (Visible if Leaderboard Tab active OR on Desktop) */}
+              <div className={`
+                 ${activeMobileTab === 'LEADERBOARD' ? 'flex flex-col overflow-y-auto' : 'hidden md:grid'}
+                 md:h-[15%] md:min-h-[80px] md:grid-cols-8 gap-2 bg-luxury-dark/50 p-2 rounded border-t border-gold-900/50
+              `}>
+                {gameState.players.map((p, i) => (
+                  <div key={p.id || i} className={`
+                     relative flex md:flex-col items-center justify-between md:justify-center rounded border bg-luxury-panel transition-all duration-300 p-3 md:p-0 mb-2 md:mb-0
+                     ${i === gameState.activePlayerIndex ? 'border-gold-500 shadow-glow bg-gradient-to-b from-luxury-panel to-gold-900/20' : 'border-zinc-800 opacity-80'}
+                  `}>
+                     <div className="flex items-center gap-2 md:block md:w-full md:text-center">
+                       {i === gameState.activePlayerIndex && <span className="md:absolute md:top-1 md:right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-glow"></span>}
+                       <div className="text-xs text-zinc-500 tracking-wider uppercase font-bold truncate">{p.name}</div>
+                     </div>
+                     
+                     <div className={`font-serif font-bold text-lg md:text-responsive-lg leading-none ${p.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{p.score}</div>
+                     
+                     {p.streak >= 2 && (
+                        <div className="flex items-center gap-1 bg-black/80 border border-orange-500/50 rounded-full px-2 py-0.5 md:absolute md:-top-3 md:left-1/2 md:-translate-x-1/2">
+                          <span className="text-[10px] animate-pulse">🔥</span>
+                          <span className="text-[9px] font-mono font-bold text-orange-400">{p.streak}</span>
+                        </div>
+                      )}
+                  </div>
+                ))}
+              </div>
+
+              {/* DESKTOP FOOTER FEED (Hidden on Mobile) */}
+              <div className="hidden md:flex h-8 shrink-0 items-center justify-between gap-4 bg-luxury-panel/80 rounded border border-zinc-900 px-4 shadow-lg backdrop-blur-sm">
+                 <div className="flex items-center gap-4 text-[9px] text-zinc-600 font-bold uppercase tracking-widest overflow-hidden">
+                     <span>{UI_TEXT.game.tooltips.reveal}</span>
+                     <span>{UI_TEXT.game.tooltips.award}</span>
+                     <span>{UI_TEXT.game.tooltips.void}</span>
+                     <span>{UI_TEXT.game.tooltips.return}</span>
+                     <span>{UI_TEXT.game.tooltips.playerSelect}</span>
+                 </div>
+                 <div className="flex items-center gap-3 pl-4 border-l border-zinc-800">
+                    <div className="flex items-center gap-1.5">
+                       <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                       <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest">{UI_TEXT.game.live}</span>
+                    </div>
+                    <div className="text-[10px] font-mono text-gold-400 font-bold uppercase tracking-wide min-w-[100px] text-right">
+                       {gameState.activityLog[0] || UI_TEXT.game.ready}
+                    </div>
+                 </div>
+              </div>
+          </div>
+    </div>
+  );
+});
+
 // --- Internal App Logic ---
 
 function CruzPhamTriviaApp() {
@@ -362,6 +498,7 @@ function CruzPhamTriviaApp() {
   const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'GAME' | 'DIRECTOR_DETACHED'>('LOGIN');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isRestoring, setIsRestoring] = useState(true);
   
   // Audio State
   const [volume, setVolume] = useState(0.5);
@@ -414,72 +551,125 @@ function CruzPhamTriviaApp() {
   // Hotkeys Toggle (for Director Panel)
   const [hotkeysEnabled, setHotkeysEnabled] = useState(true);
 
-  // --- Initialization ---
+  // --- Initialization & Session Restoration ---
   useEffect(() => {
-    broadcastRef.current = new BroadcastChannel('cruzpham_game_state');
-    
-    // Check if we are a detached director
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('mode') === 'director') {
-      const ticket = params.get('ticket');
-      if (ticket) {
-         // Attempt to redeem ticket for session reuse
-         const reusedSession = StorageService.redeemDetachTicket(ticket);
-         if (reusedSession) {
-            setSession(reusedSession);
-            setView('DIRECTOR_DETACHED');
-            // Disable hotkeys by default in detached mode to avoid conflict, user can enable
-            setHotkeysEnabled(false); 
-            // Request state from main window
-            broadcastRef.current.postMessage({ type: 'REQUEST_STATE' });
-            showToast("Director Mode Connected", 'success');
-         } else {
-            showToast("Invalid or Expired Director Ticket", 'error');
-         }
-      } else {
-         showToast("Director Mode Requires Ticket", 'error');
-      }
-    }
+    const restore = async () => {
+      const storedSessionId = localStorage.getItem(CLIENT_SESSION_KEY);
+      const params = new URLSearchParams(window.location.search);
+      const isDirectorMode = params.get('mode') === 'director';
 
+      if (storedSessionId) {
+        const restoredSession = await StorageService.restoreSession(storedSessionId);
+        if (restoredSession) {
+          setSession(restoredSession);
+          setTemplates(StorageService.getTemplates(restoredSession.username));
+          
+          // Rehydrate Game State
+          const activeGame = StorageService.getGameState(restoredSession.sessionId);
+          if (activeGame) {
+             setGameState(activeGame);
+             if (isDirectorMode) {
+               setView('DIRECTOR_DETACHED');
+               setHotkeysEnabled(false);
+               showToast("Director Mode Connected", 'success');
+             } else if (activeGame.isActive) {
+               setView('GAME');
+             } else {
+               setView('DASHBOARD');
+             }
+          } else {
+             if (isDirectorMode) {
+                setView('DIRECTOR_DETACHED'); 
+             } else {
+                setView('DASHBOARD');
+             }
+          }
+          setIsRestoring(false);
+          return;
+        } else {
+          localStorage.removeItem(CLIENT_SESSION_KEY);
+          if (!isDirectorMode) showToast(UI_TEXT.auth.errors.expired, 'warning');
+        }
+      }
+
+      if (isDirectorMode) {
+        const ticket = params.get('ticket');
+        if (ticket) {
+           const reusedSession = StorageService.redeemDetachTicket(ticket);
+           if (reusedSession) {
+              localStorage.setItem(CLIENT_SESSION_KEY, reusedSession.sessionId);
+              setSession(reusedSession);
+              setView('DIRECTOR_DETACHED');
+              setHotkeysEnabled(false);
+              const activeGame = StorageService.getGameState(reusedSession.sessionId);
+              if (activeGame) setGameState(activeGame);
+              
+              broadcastRef.current?.postMessage({ type: 'REQUEST_STATE' });
+              showToast("Director Mode Connected", 'success');
+           } else {
+              showToast("Invalid or Expired Director Ticket", 'error');
+           }
+        } else {
+           showToast("Director Mode Requires Ticket", 'error');
+        }
+      }
+      
+      setIsRestoring(false);
+    };
+
+    restore();
+    
+    // Setup Broadcast Channel
+    broadcastRef.current = new BroadcastChannel('cruzpham_game_state');
     broadcastRef.current.onmessage = (event) => {
-      // Loop Prevention Logic
       if (isBroadcastingRef.current) return;
 
       if (event.data.type === 'STATE_UPDATE') {
         isBroadcastingRef.current = true;
-        setGameState(event.data.payload);
-        
-        // If we receive active game state and we are in LOGIN/DASHBOARD (but not detached), jump to GAME
-        if (event.data.payload.isActive && view !== 'GAME' && view !== 'DIRECTOR_DETACHED') {
-             setView('GAME');
+        try {
+          // SAFE STATE UPDATE: Ensure payload is valid before setting
+          if (event.data.payload && event.data.payload.categories) {
+             setGameState(event.data.payload);
+             
+             // Only switch view if not in a critical view already
+             if (event.data.payload.isActive && view !== 'GAME' && view !== 'DIRECTOR_DETACHED' && session) {
+               setView('GAME');
+             }
+          }
+        } catch (e) {
+          logger.error('BROADCAST_STATE_ERROR', e as Error);
         }
       } else if (event.data.type === 'REQUEST_STATE') {
-         // Another window requested state, send ours if we have it
          if (gameState.isActive) {
             broadcastRef.current?.postMessage({ type: 'STATE_UPDATE', payload: gameState });
          }
       } else if (event.data.type === 'DIRECTOR_CLOSED') {
-         // Detached window closed, restore panel here
          setIsDirectorPoppedOut(false);
          showToast("Director Controls Restored", 'info');
       }
     };
 
     return () => broadcastRef.current?.close();
-  }, [view, gameState.isActive]);
+  }, [view]);
 
-  // Broadcast state changes
+  // --- Persistence Effects ---
+
+  // Persist Game State on Change (if session active)
   useEffect(() => {
-    // If this update came from broadcast (flag is true), reset flag and DO NOT broadcast back.
     if (isBroadcastingRef.current) {
         isBroadcastingRef.current = false;
+        if (session) StorageService.saveGameState(session.sessionId, gameState);
         return;
+    }
+
+    if (session) {
+       StorageService.saveGameState(session.sessionId, gameState);
     }
 
     if (broadcastRef.current && (gameState.isActive || view === 'DIRECTOR_DETACHED')) {
       broadcastRef.current.postMessage({ type: 'STATE_UPDATE', payload: gameState });
     }
-  }, [gameState]);
+  }, [gameState, session]);
 
   // Audio Init on first interaction
   const initAudio = () => {
@@ -507,7 +697,11 @@ function CruzPhamTriviaApp() {
 
   // --- Session Lifecycle ---
   const logout = useCallback(() => {
-    if (session) StorageService.logout(session.sessionId);
+    if (session) {
+      StorageService.logout(session.sessionId);
+      StorageService.clearGameState(session.sessionId);
+    }
+    localStorage.removeItem(CLIENT_SESSION_KEY);
     setSession(null);
     setView('LOGIN');
     setGameState(prev => ({ ...prev, isActive: false }));
@@ -548,6 +742,7 @@ function CruzPhamTriviaApp() {
         const res = await StorageService.login(username, token || "");
         if (res.success && res.session) {
           setSession(res.session);
+          localStorage.setItem(CLIENT_SESSION_KEY, res.session.sessionId);
           setView('DASHBOARD');
           setTemplates(StorageService.getTemplates(res.session.username));
           showToast("Welcome to the Studio", 'success');
@@ -872,6 +1067,14 @@ function CruzPhamTriviaApp() {
   }, [view]);
 
   // --- Views ---
+
+  if (isRestoring) {
+    return (
+      <div className="h-dvh w-full flex items-center justify-center bg-luxury-black text-gold-500 font-serif tracking-widest animate-pulse">
+         {UI_TEXT.common.reconnecting}
+      </div>
+    );
+  }
 
   if (view === 'DIRECTOR_DETACHED') {
       return (
@@ -1237,103 +1440,19 @@ function CruzPhamTriviaApp() {
         <Header />
         
         {/* --- MAIN STAGE AREA (FLEXIBLE) --- */}
-        <div className="flex-1 flex flex-col min-h-0 relative z-0">
-          
-          {/* MOBILE TABS (ONLY VISIBLE ON MOBILE) */}
-          <div className="md:hidden flex h-10 border-b border-zinc-900 bg-luxury-panel shrink-0">
-            <button onClick={() => setActiveMobileTab('BOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'BOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>BOARD</button>
-            <button onClick={() => setActiveMobileTab('LEADERBOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'LEADERBOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>LEADERBOARD</button>
-          </div>
-
-          {/* STAGE CONTENT CONTAINER */}
-          <div className="flex-1 relative overflow-hidden flex flex-col p-2 md:p-4 gap-4">
-              
-              {/* BOARD GRID (Visible if Board Tab active OR on Desktop) */}
-              <div className={`
-                ${(activeMobileTab === 'BOARD' || window.innerWidth >= 768) ? 'flex' : 'hidden'}
-                flex-1 grid gap-1 md:gap-2 min-h-0 overflow-auto custom-scrollbar
-              `} style={{ gridTemplateColumns: `repeat(${gameState.categories.length}, minmax(100px, 1fr))` }}>
-                {gameState.categories.map((cat, i) => (
-                  <div key={cat.id} className="flex flex-col h-full gap-1 lg:gap-2">
-                    {/* Header Tile */}
-                    <div className="h-12 md:h-[12%] min-h-[40px] bg-gradient-to-b from-luxury-panel to-black border border-gold-900 flex items-center justify-center p-1 shadow-lg shrink-0">
-                      <span className="font-serif font-bold text-center text-gold-300 leading-tight uppercase break-words text-responsive-base line-clamp-2">{cat.name}</span>
-                    </div>
-                    {/* Question Tiles */}
-                    <div className="flex-1 flex flex-col gap-1 lg:gap-2 overflow-y-auto">
-                      {cat.questions.map(q => {
-                        const isAvail = q.state === QuestionState.AVAILABLE || q.state === QuestionState.ACTIVE;
-                        return (
-                          <button 
-                            key={q.id}
-                            onClick={() => selectQuestion(cat.id, q.id)}
-                            disabled={!isAvail}
-                            className={`
-                              flex-1 min-h-[40px] relative group flex items-center justify-center border transition-all duration-300 shrink-0
-                              ${q.state === QuestionState.ACTIVE ? 'bg-gold-500 border-gold-300 shadow-glow-strong z-10' : 
-                                q.state === QuestionState.VOIDED ? 'bg-zinc-900/50 border-red-900/30 text-red-700 cursor-not-allowed' :
-                                isAvail ? 'bg-luxury-panel border-gold-900/40 hover:bg-gold-900/20 hover:border-gold-500' : 'opacity-0 pointer-events-none'}
-                            `}
-                          >
-                             <span className={`font-serif font-black tracking-tighter text-responsive-lg ${q.state === QuestionState.ACTIVE ? 'text-black' : 'text-gold-500 shadow-black drop-shadow-md'}`}>
-                               {q.state === QuestionState.VOIDED ? <span className="text-[10px] font-bold tracking-widest text-red-900/50 transform -rotate-12">VOID</span> : (isAvail ? q.points : '')}
-                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* LEADERBOARD (Visible if Leaderboard Tab active OR on Desktop) */}
-              <div className={`
-                 ${activeMobileTab === 'LEADERBOARD' ? 'flex flex-col overflow-y-auto' : 'hidden md:grid'}
-                 md:h-[15%] md:min-h-[80px] md:grid-cols-8 gap-2 bg-luxury-dark/50 p-2 rounded border-t border-gold-900/50
-              `}>
-                {gameState.players.map((p, i) => (
-                  <div key={p.id} className={`
-                     relative flex md:flex-col items-center justify-between md:justify-center rounded border bg-luxury-panel transition-all duration-300 p-3 md:p-0 mb-2 md:mb-0
-                     ${i === gameState.activePlayerIndex ? 'border-gold-500 shadow-glow bg-gradient-to-b from-luxury-panel to-gold-900/20' : 'border-zinc-800 opacity-80'}
-                  `}>
-                     <div className="flex items-center gap-2 md:block md:w-full md:text-center">
-                       {i === gameState.activePlayerIndex && <span className="md:absolute md:top-1 md:right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-glow"></span>}
-                       <div className="text-xs text-zinc-500 tracking-wider uppercase font-bold truncate">{p.name}</div>
-                     </div>
-                     
-                     <div className={`font-serif font-bold text-lg md:text-responsive-lg leading-none ${p.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{p.score}</div>
-                     
-                     {p.streak >= 2 && (
-                        <div className="flex items-center gap-1 bg-black/80 border border-orange-500/50 rounded-full px-2 py-0.5 md:absolute md:-top-3 md:left-1/2 md:-translate-x-1/2">
-                          <span className="text-[10px] animate-pulse">🔥</span>
-                          <span className="text-[9px] font-mono font-bold text-orange-400">{p.streak}</span>
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-
-              {/* DESKTOP FOOTER FEED (Hidden on Mobile) */}
-              <div className="hidden md:flex h-8 shrink-0 items-center justify-between gap-4 bg-luxury-panel/80 rounded border border-zinc-900 px-4 shadow-lg backdrop-blur-sm">
-                 <div className="flex items-center gap-4 text-[9px] text-zinc-600 font-bold uppercase tracking-widest overflow-hidden">
-                     <span>{UI_TEXT.game.tooltips.reveal}</span>
-                     <span>{UI_TEXT.game.tooltips.award}</span>
-                     <span>{UI_TEXT.game.tooltips.void}</span>
-                     <span>{UI_TEXT.game.tooltips.return}</span>
-                     <span>{UI_TEXT.game.tooltips.playerSelect}</span>
-                 </div>
-                 <div className="flex items-center gap-3 pl-4 border-l border-zinc-800">
-                    <div className="flex items-center gap-1.5">
-                       <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                       <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest">{UI_TEXT.game.live}</span>
-                    </div>
-                    <div className="text-[10px] font-mono text-gold-400 font-bold uppercase tracking-wide min-w-[100px] text-right">
-                       {gameState.activityLog[0] || UI_TEXT.game.ready}
-                    </div>
-                 </div>
-              </div>
-          </div>
-        </div>
+        <ErrorBoundary>
+          <SafeGameBoard 
+            gameState={gameState} 
+            activeMobileTab={activeMobileTab}
+            selectQuestion={selectQuestion}
+            setActiveMobileTab={setActiveMobileTab as any}
+            logRender={() => logger.debug('GAME_BOARD_RENDER', { 
+              timestamp: Date.now(), 
+              activeQuestion: gameState.currentQuestion,
+              directorMode: gameState.directorMode 
+            })}
+          />
+        </ErrorBoundary>
 
         {/* --- MOBILE FIXED ACTION BAR (SAFE AREA) --- */}
         <div className="md:hidden shrink-0 bg-luxury-panel border-t border-gold-900/50 pb-safe z-30">
@@ -1346,7 +1465,7 @@ function CruzPhamTriviaApp() {
                          <span className="text-[9px] text-zinc-500 uppercase tracking-widest">ACTIVE</span>
                          <span className="text-xs font-bold text-gold-300 truncate w-24">{activePlayer.name}</span>
                       </div>
-                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex - 1 + 8) % 8 }))}><Icons.ChevronRight/></Button>
+                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex + 1) % 8 }))}><Icons.ChevronRight/></Button>
                    </div>
                    <div className="flex items-center gap-2">
                       <Button variant="danger" className="px-3 py-1 text-lg font-bold" onClick={() => setGameState(p => { const pl = [...p.players]; pl[p.activePlayerIndex].score -= 100; pl[p.activePlayerIndex].streak = 0; return {...p, players: pl}; })}>-</Button>
