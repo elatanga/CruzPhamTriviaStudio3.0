@@ -86,9 +86,6 @@ const DirectorPanel: React.FC<{
 
   const forceResolve = (action: 'AWARD' | 'VOID' | 'RETURN') => {
     if (!gameState.currentQuestion) return;
-    // We can reuse the logic from the main app, but for now we dispatch a custom event or let the main app handle it.
-    // However, since we have setGameState, we can manipulate directly.
-    // For safety, let's just use the same logic as the main game loop, but implemented here for direct control.
     const { categoryId, questionId } = gameState.currentQuestion;
     setGameState(prev => {
        const cats = prev.categories.map(c => 
@@ -236,36 +233,50 @@ const DirectorPanel: React.FC<{
                       <span>EDIT Q</span>
                       <button onClick={() => setEditingQuestion(null)} className="text-zinc-500">BACK</button>
                    </div>
-                   <textarea 
-                     className="w-full bg-zinc-900 border border-zinc-700 text-xs text-zinc-300 p-1 h-16"
-                     value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].question}
-                     onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { question: e.target.value })}
-                   />
-                   <input 
-                     className="w-full bg-zinc-900 border border-zinc-700 text-xs text-green-400 p-1"
-                     value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].answer}
-                     onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { answer: e.target.value })}
-                   />
-                   <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[9px] text-zinc-500">POINTS</label>
-                        <input 
-                          type="number" className="w-12 bg-black border border-zinc-700 text-xs text-gold-300 px-1"
-                          value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].points}
-                          onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { points: parseInt(e.target.value) })}
+                   {/* Edit logic */}
+                   {(() => {
+                     const q = gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex];
+                     return (
+                      <>
+                        <textarea 
+                          className="w-full bg-zinc-900 border border-zinc-700 text-xs text-zinc-300 p-1 h-16"
+                          value={q.question}
+                          onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { question: e.target.value })}
                         />
-                      </div>
-                      <button 
-                        onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { isDoubleOrNothing: !gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].isDoubleOrNothing })}
-                        className={`text-[9px] px-2 py-1 border ${gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].isDoubleOrNothing ? 'border-red-500 text-red-500' : 'border-zinc-700 text-zinc-700'}`}
-                      >
-                        DOUBLE OR NOTHING
-                      </button>
-                   </div>
-                   <div className="flex gap-2 mt-2">
-                      <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.AVAILABLE })} className="flex-1 bg-green-900/30 text-green-500 text-[9px] border border-green-900 py-1">RESTORE</button>
-                      <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.VOIDED })} className="flex-1 bg-red-900/30 text-red-500 text-[9px] border border-red-900 py-1">VOID</button>
-                   </div>
+                        <input 
+                          className="w-full bg-zinc-900 border border-zinc-700 text-xs text-green-400 p-1"
+                          value={q.answer}
+                          onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { answer: e.target.value })}
+                        />
+                        <div className="flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                              <label className="text-[9px] text-zinc-500">POINTS</label>
+                              <input 
+                                type="number" className="w-12 bg-black border border-zinc-700 text-xs text-gold-300 px-1"
+                                value={q.points}
+                                onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { points: parseInt(e.target.value) })}
+                              />
+                            </div>
+                            <button 
+                              onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { isDoubleOrNothing: !q.isDoubleOrNothing })}
+                              className={`text-[9px] px-2 py-1 border ${q.isDoubleOrNothing ? 'border-red-500 text-red-500' : 'border-zinc-700 text-zinc-700'}`}
+                            >
+                              DOUBLE OR NOTHING
+                            </button>
+                        </div>
+                        <div className="flex gap-2 mt-2">
+                            {q.state === QuestionState.VOIDED ? (
+                                <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.AVAILABLE })} className="w-full bg-green-900 text-green-200 text-xs font-bold border border-green-600 py-2 animate-pulse">ACTIVATE & UNVOID</button>
+                            ) : (
+                              <>
+                                <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.AVAILABLE })} className="flex-1 bg-green-900/30 text-green-500 text-[9px] border border-green-900 py-1">RESTORE</button>
+                                <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.VOIDED })} className="flex-1 bg-red-900/30 text-red-500 text-[9px] border border-red-900 py-1">VOID</button>
+                              </>
+                            )}
+                        </div>
+                      </>
+                     );
+                   })()}
                 </div>
               )}
            </div>
@@ -920,11 +931,12 @@ function CruzPhamTriviaApp() {
                         className={`
                           flex-1 relative group flex items-center justify-center border transition-all duration-300
                           ${q.state === QuestionState.ACTIVE ? 'bg-gold-500 border-gold-300 shadow-glow-strong z-10' : 
-                            isAvail ? 'bg-luxury-panel border-gold-900/40 hover:bg-gold-900/20 hover:border-gold-500' : 'opacity-0'}
+                            q.state === QuestionState.VOIDED ? 'bg-zinc-900/50 border-red-900/30 text-red-700 cursor-not-allowed' :
+                            isAvail ? 'bg-luxury-panel border-gold-900/40 hover:bg-gold-900/20 hover:border-gold-500' : 'opacity-0 pointer-events-none'}
                         `}
                       >
                          <span className={`font-serif font-black tracking-tighter text-responsive-lg ${q.state === QuestionState.ACTIVE ? 'text-black' : 'text-gold-500 shadow-black drop-shadow-md'}`}>
-                           {isAvail ? q.points : ''}
+                           {q.state === QuestionState.VOIDED ? <span className="text-[10px] font-bold tracking-widest text-red-900/50 transform -rotate-12">VOID</span> : (isAvail ? q.points : '')}
                          </span>
                       </button>
                     );
@@ -997,24 +1009,28 @@ function CruzPhamTriviaApp() {
            const cat = gameState.categories.find(c => c.id === gameState.currentQuestion!.categoryId);
            const q = cat?.questions.find(q => q.id === gameState.currentQuestion!.questionId);
            if (!q) return null;
+           const isVoided = q.state === QuestionState.VOIDED;
+
            return (
              <div className="absolute inset-0 z-40 bg-luxury-glass backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
-                <div className="w-full max-w-5xl aspect-video bg-black border-2 border-gold-600 shadow-glow-strong rounded-lg flex flex-col overflow-hidden relative">
+                <div className={`w-full max-w-5xl aspect-video bg-black border-2 shadow-glow-strong rounded-lg flex flex-col overflow-hidden relative ${isVoided ? 'border-red-900/50' : 'border-gold-600'}`}>
                    {/* Card Header */}
                    <div className="h-16 flex items-center justify-between px-8 bg-gradient-to-r from-gold-900/20 to-transparent border-b border-gold-900/50">
-                      <span className="font-serif text-gold-400 tracking-widest text-lg">{cat?.name}</span>
-                      <span className="font-serif text-gold-200 font-bold text-2xl">{q.points}</span>
+                      <span className={`font-serif tracking-widest text-lg ${isVoided ? 'text-zinc-600' : 'text-gold-400'}`}>{cat?.name}</span>
+                      <span className={`font-serif font-bold text-2xl ${isVoided ? 'text-zinc-600' : 'text-gold-200'}`}>{q.points}</span>
                    </div>
                    
                    {/* Card Content */}
                    <div className="flex-1 flex flex-col items-center justify-center p-12 text-center relative">
-                      {q.isDoubleOrNothing && (
+                      {isVoided && <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center pointer-events-none"><span className="text-red-500 font-bold text-4xl tracking-[1em] border-4 border-red-900/50 p-8 transform -rotate-12">VOIDED</span></div>}
+                      
+                      {q.isDoubleOrNothing && !isVoided && (
                         <div className="absolute top-8 px-6 py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-xl skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">DOUBLE OR NOTHING</div>
                       )}
                       
-                      <h2 className="font-serif text-white font-bold leading-tight drop-shadow-lg text-responsive-hero max-w-4xl">{q.question}</h2>
+                      <h2 className={`font-serif font-bold leading-tight drop-shadow-lg text-responsive-hero max-w-4xl ${isVoided ? 'text-zinc-700 blur-sm' : 'text-white'}`}>{q.question}</h2>
                       
-                      {q.state === QuestionState.REVEALED && (
+                      {q.state === QuestionState.REVEALED && !isVoided && (
                         <div className="mt-12 pt-8 border-t-2 border-gold-500/30 w-full animate-in slide-in-from-bottom-8 duration-500">
                            <p className="font-serif text-gold-400 text-responsive-xl">{q.answer}</p>
                         </div>
@@ -1022,14 +1038,20 @@ function CruzPhamTriviaApp() {
                    </div>
 
                    {/* Card Footer Controls */}
-                   <div className="h-24 bg-luxury-panel border-t border-gold-900 flex items-center justify-center gap-6">
-                      {q.state !== QuestionState.REVEALED ? (
-                        <Button onClick={revealAnswer} className="w-64 py-4 text-xl">REVEAL</Button>
+                   <div className="h-24 bg-luxury-panel border-t border-gold-900 flex items-center justify-center gap-6 z-30">
+                      {isVoided ? (
+                        <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>CLOSE VOIDED QUESTION</Button>
                       ) : (
                         <>
-                          <Button variant="danger" onClick={() => resolveQuestion('VOID')}>VOID</Button>
-                          <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>RETURN</Button>
-                          <Button variant="primary" onClick={() => resolveQuestion('AWARD')} className="w-64 py-4 text-xl">AWARD</Button>
+                          {q.state !== QuestionState.REVEALED ? (
+                            <Button onClick={revealAnswer} className="w-64 py-4 text-xl">REVEAL</Button>
+                          ) : (
+                            <>
+                              <Button variant="danger" onClick={() => resolveQuestion('VOID')}>VOID</Button>
+                              <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>RETURN</Button>
+                              <Button variant="primary" onClick={() => resolveQuestion('AWARD')} className="w-64 py-4 text-xl">AWARD</Button>
+                            </>
+                          )}
                         </>
                       )}
                    </div>
