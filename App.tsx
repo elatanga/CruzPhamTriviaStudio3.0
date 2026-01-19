@@ -22,7 +22,8 @@ const Icons = {
   WifiOff: () => <svg className="w-4 h-4 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M12 18h.01M8.414 14.414l3.586-3.586m4 0l3.586 3.586M5.707 11.707l2.828-2.828m8 0l2.828 2.828M2.929 9l3.536-3.536m11.314 0L21.071 9" /></svg>,
   VolumeUp: () => <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.414z" clipRule="evenodd"/></svg>,
   VolumeMute: () => <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" clipRule="evenodd"/></svg>,
-  Detach: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+  Detach: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>,
+  Keyboard: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4h2v-4zm-6 0H6v4h2v-4zm16 0h2v4h-2v-4zm-14 0h2v4H8v-4zm0-6h2v4H8V9zm6 0h2v4h-2V9zm-6-6h2v4H8V3zm6 0h2v4h-2V3z" /></svg>
 };
 
 // --- Helper Components ---
@@ -51,9 +52,12 @@ const Button: React.FC<{
 const DirectorPanel: React.FC<{
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
-  onClose: () => void;
-  openDetached: () => void;
-}> = ({ gameState, setGameState, onClose, openDetached }) => {
+  onClose?: () => void;
+  openDetached?: () => void;
+  isDetached?: boolean;
+  hotkeysEnabled?: boolean;
+  toggleHotkeys?: () => void;
+}> = ({ gameState, setGameState, onClose, openDetached, isDetached, hotkeysEnabled, toggleHotkeys }) => {
   const [tab, setTab] = useState<'GAME' | 'PLAYERS' | 'QUESTIONS' | 'LOG'>('GAME');
   const [editingQuestion, setEditingQuestion] = useState<{cIndex: number, qIndex: number} | null>(null);
 
@@ -133,18 +137,26 @@ const DirectorPanel: React.FC<{
   };
 
   return (
-    <div className="absolute top-0 right-0 bottom-0 w-80 bg-luxury-black border-l border-gold-600 shadow-2xl z-50 flex flex-col font-sans">
+    <div className={`bg-luxury-black border-l border-gold-600 shadow-2xl z-50 flex flex-col font-sans ${isDetached ? 'w-full h-full border-l-0' : 'absolute top-0 right-0 bottom-0 w-80'}`}>
       {/* Header */}
-      <div className="h-12 border-b border-gold-800 bg-luxury-panel flex items-center justify-between px-4">
-        <span className="text-gold-400 font-bold tracking-widest text-xs">DIRECTOR CONTROL</span>
+      <div className="h-12 border-b border-gold-800 bg-luxury-panel flex items-center justify-between px-4 shrink-0">
+        <div className="flex items-center gap-2">
+           <span className="text-gold-400 font-bold tracking-widest text-xs">{isDetached ? 'DIRECTOR VIEW [DETACHED]' : 'DIRECTOR CONTROL'}</span>
+           {isDetached && <span className="text-[10px] text-green-500 animate-pulse">● LIVE SYNC</span>}
+        </div>
         <div className="flex gap-2">
-           <Button variant="icon" onClick={openDetached}><Icons.Detach/></Button>
-           <Button variant="icon" onClick={onClose}><Icons.Close/></Button>
+           {toggleHotkeys && (
+             <Button variant="icon" onClick={toggleHotkeys} title={`Keyboard Shortcuts: ${hotkeysEnabled ? 'ON' : 'OFF'}`} className={hotkeysEnabled ? 'text-gold-400' : 'text-zinc-600'}>
+               <Icons.Keyboard />
+             </Button>
+           )}
+           {!isDetached && openDetached && <Button variant="icon" onClick={openDetached} title="Pop Out"><Icons.Detach/></Button>}
+           {!isDetached && onClose && <Button variant="icon" onClick={onClose} title="Close"><Icons.Close/></Button>}
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gold-900 bg-black">
+      <div className="flex border-b border-gold-900 bg-black shrink-0">
          {['GAME', 'PLAYERS', 'QUESTIONS', 'LOG'].map(t => (
            <button 
              key={t} 
@@ -312,7 +324,7 @@ const DirectorPanel: React.FC<{
 function CruzPhamTriviaApp() {
   const { showToast } = useToast();
   const [session, setSession] = useState<Session | null>(null);
-  const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'GAME'>('LOGIN');
+  const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'GAME' | 'DIRECTOR_DETACHED'>('LOGIN');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
@@ -358,6 +370,9 @@ function CruzPhamTriviaApp() {
   const broadcastRef = useRef<BroadcastChannel | null>(null);
   const isBroadcastingRef = useRef(false);
 
+  // Hotkeys Toggle (for Director Panel)
+  const [hotkeysEnabled, setHotkeysEnabled] = useState(true);
+
   // --- Initialization ---
   useEffect(() => {
     broadcastRef.current = new BroadcastChannel('cruzpham_game_state');
@@ -365,32 +380,50 @@ function CruzPhamTriviaApp() {
     // Check if we are a detached director
     const params = new URLSearchParams(window.location.search);
     if (params.get('mode') === 'director') {
-      showToast("Director Mode Active - Waiting for Sync...", 'info');
-      // We don't force view change yet, we wait for state sync
+      const ticket = params.get('ticket');
+      if (ticket) {
+         // Attempt to redeem ticket for session reuse
+         const reusedSession = StorageService.redeemDetachTicket(ticket);
+         if (reusedSession) {
+            setSession(reusedSession);
+            setView('DIRECTOR_DETACHED');
+            // Disable hotkeys by default in detached mode to avoid conflict, user can enable
+            setHotkeysEnabled(false); 
+            // Request state from main window
+            broadcastRef.current.postMessage({ type: 'REQUEST_STATE' });
+            showToast("Director Mode Connected", 'success');
+         } else {
+            showToast("Invalid or Expired Director Ticket", 'error');
+         }
+      } else {
+         showToast("Director Mode Requires Ticket", 'error');
+      }
     }
 
     broadcastRef.current.onmessage = (event) => {
       if (event.data.type === 'STATE_UPDATE') {
         isBroadcastingRef.current = true;
         setGameState(event.data.payload);
-        // If we receive active game state and we are in LOGIN, jump to GAME
-        if (event.data.payload.isActive && view !== 'GAME') {
+        
+        // If we receive active game state and we are in LOGIN/DASHBOARD (but not detached), jump to GAME
+        if (event.data.payload.isActive && view !== 'GAME' && view !== 'DIRECTOR_DETACHED') {
              setView('GAME');
-             // Auto-open director panel if detached
-             if (params.get('mode') === 'director') {
-               setGameState(p => ({...p, directorMode: true}));
-             }
         }
         isBroadcastingRef.current = false;
+      } else if (event.data.type === 'REQUEST_STATE') {
+         // Another window requested state, send ours if we have it
+         if (gameState.isActive) {
+            broadcastRef.current?.postMessage({ type: 'STATE_UPDATE', payload: gameState });
+         }
       }
     };
 
     return () => broadcastRef.current?.close();
-  }, [view]);
+  }, [view, gameState.isActive]); // gameState.isActive dependency needed for REQUEST_STATE
 
   // Broadcast state changes
   useEffect(() => {
-    if (!isBroadcastingRef.current && broadcastRef.current && gameState.isActive) {
+    if (!isBroadcastingRef.current && broadcastRef.current && (gameState.isActive || view === 'DIRECTOR_DETACHED')) {
       broadcastRef.current.postMessage({ type: 'STATE_UPDATE', payload: gameState });
     }
   }, [gameState]);
@@ -640,7 +673,10 @@ function CruzPhamTriviaApp() {
   // --- Keyboard & Timer ---
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (view !== 'GAME' || isEditorOpen) return;
+      // Hotkey Toggle Logic for Director
+      if (!hotkeysEnabled) return;
+
+      if ((view !== 'GAME' && view !== 'DIRECTOR_DETACHED') || isEditorOpen) return;
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
       // STRICT LOCK CHECK FOR KEYBOARD using Top-Level State
@@ -696,7 +732,7 @@ function CruzPhamTriviaApp() {
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [view, isEditorOpen, revealAnswer, resolveQuestion, gameState.currentQuestion, gameState.currentQuestionState]); // Added currentQuestionState dependency
+  }, [view, isEditorOpen, revealAnswer, resolveQuestion, gameState.currentQuestion, gameState.currentQuestionState, hotkeysEnabled]); 
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -750,13 +786,30 @@ function CruzPhamTriviaApp() {
   };
 
   const openDetachedDirector = () => {
+    if (!session) return;
+    const ticket = StorageService.createDetachTicket(session.sessionId);
     const url = new URL(window.location.href);
     url.searchParams.set('mode', 'director');
+    url.searchParams.set('ticket', ticket);
     window.open(url.toString(), '_blank', 'width=400,height=800');
     showToast("Director Panel Detached", 'info');
   };
 
   // --- Views ---
+
+  if (view === 'DIRECTOR_DETACHED') {
+      return (
+        <div className="h-full w-full bg-luxury-black overflow-hidden relative">
+            <DirectorPanel 
+                gameState={gameState}
+                setGameState={setGameState}
+                isDetached={true}
+                hotkeysEnabled={hotkeysEnabled}
+                toggleHotkeys={() => setHotkeysEnabled(!hotkeysEnabled)}
+            />
+        </div>
+      );
+  }
 
   if (view === 'LOGIN') {
     return (
@@ -1166,6 +1219,8 @@ function CruzPhamTriviaApp() {
              setGameState={setGameState} 
              onClose={() => setGameState(p => ({...p, directorMode: false}))}
              openDetached={openDetachedDirector}
+             hotkeysEnabled={hotkeysEnabled}
+             toggleHotkeys={() => setHotkeysEnabled(!hotkeysEnabled)}
            />
         )}
 

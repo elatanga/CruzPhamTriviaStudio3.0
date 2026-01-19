@@ -1,3 +1,4 @@
+
 import { Template, User, Session, AppError } from '../types';
 import { logger } from './loggerService';
 
@@ -5,7 +6,8 @@ import { logger } from './loggerService';
 const KEYS = {
   USERS: 'cruzphamtrivia_users_v2',
   SESSIONS: 'cruzphamtrivia_sessions_v2',
-  TEMPLATES: 'cruzphamtrivia_templates_v2'
+  TEMPLATES: 'cruzphamtrivia_templates_v2',
+  TICKETS: 'cruzphamtrivia_detach_tickets_v1' // Shared storage for tickets
 };
 
 const SESSION_TTL = 30 * 60 * 1000; 
@@ -68,6 +70,13 @@ const saveDB = <T>(key: string, data: T[]) => {
     throw new AppError("Storage Quota Exceeded or Write Error", "STORAGE_ERROR", false);
   }
 };
+
+// Interface for Ticket
+interface DetachTicket {
+  ticket: string;
+  sessionId: string;
+  expiresAt: number;
+}
 
 export const StorageService = {
   
@@ -205,6 +214,57 @@ export const StorageService = {
       return false;
     }
   },
+
+  // --- DETACHMENT TICKET SYSTEM ---
+  
+  createDetachTicket: (sessionId: string): string => {
+    const ticket = generateToken().substring(0, 16); // Short-lived token
+    const tickets = getDB<DetachTicket>(KEYS.TICKETS);
+    
+    // Clean old tickets
+    const validTickets = tickets.filter(t => t.expiresAt > Date.now());
+    
+    validTickets.push({
+      ticket,
+      sessionId,
+      expiresAt: Date.now() + 60 * 1000 // 60 seconds validity
+    });
+    
+    saveDB(KEYS.TICKETS, validTickets);
+    logger.audit('DETACH_TICKET_CREATED', { sessionId });
+    return ticket;
+  },
+
+  redeemDetachTicket: (ticket: string): Session | null => {
+    const tickets = getDB<DetachTicket>(KEYS.TICKETS);
+    const matchIndex = tickets.findIndex(t => t.ticket === ticket && t.expiresAt > Date.now());
+    
+    if (matchIndex === -1) {
+      logger.warn('DETACH_TICKET_INVALID', { ticket });
+      return null;
+    }
+
+    const match = tickets[matchIndex];
+    const sessions = getDB<Session>(KEYS.SESSIONS);
+    const session = sessions.find(s => s.sessionId === match.sessionId);
+
+    if (!session) {
+      logger.error('DETACH_SESSION_NOT_FOUND', new Error('Session missing for ticket'), { sessionId: match.sessionId });
+      return null;
+    }
+
+    // Burn the ticket (One-time use)
+    tickets.splice(matchIndex, 1);
+    saveDB(KEYS.TICKETS, tickets);
+    
+    logger.audit('DETACH_TICKET_REDEEMED', { sessionId: session.sessionId });
+    // Initialize context for this new window
+    logger.setContext(session.sessionId, session.username);
+    
+    return session;
+  },
+
+  // --- TEMPLATES ---
 
   getTemplates: (username: string): Template[] => {
     const allTemplates = getDB<{owner: string, template: Template}>(KEYS.TEMPLATES);
