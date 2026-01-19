@@ -123,6 +123,14 @@ const LoginView: React.FC<{ onLogin: (u: string, t: string) => void; isOnline: b
   const [reqError, setReqError] = useState<string | null>(null);
   const [reqLoading, setReqLoading] = useState(false);
 
+  const handleLoginSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    const username = (target.elements.namedItem('username') as HTMLInputElement).value.trim();
+    const token = (target.elements.namedItem('token') as HTMLInputElement).value.trim(); // Trim whitespace from copy/paste
+    onLogin(username, token);
+  };
+
   const handleRequestSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setReqError(null);
@@ -165,7 +173,7 @@ const LoginView: React.FC<{ onLogin: (u: string, t: string) => void; isOnline: b
             
             {error && <div className="w-full text-center text-red-400 text-xs mb-4 bg-red-900/10 py-2 border border-red-900/30">{error}</div>}
             
-            <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); onLogin(e.target.username.value, e.target.token.value); }}>
+            <form className="w-full space-y-4" onSubmit={handleLoginSubmit}>
               <div className="space-y-1"><input name="username" data-testid="login-username" placeholder={UI_TEXT.auth.login.usernamePlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" /></div>
               <div className="space-y-1"><input name="token" type="password" data-testid="login-token" placeholder={UI_TEXT.auth.login.tokenPlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" /></div>
               <p className="text-[10px] text-zinc-600 text-center px-4">{UI_TEXT.auth.login.helper}</p>
@@ -257,6 +265,11 @@ const LoginView: React.FC<{ onLogin: (u: string, t: string) => void; isOnline: b
 
 // --- ADMIN DASHBOARD ---
 const AdminDashboard: React.FC<{ session: Session; logout: () => void; onSwitchToStudio: () => void }> = ({ session, logout, onSwitchToStudio }) => {
+  // STRICT SECURITY CHECK
+  if (session.userType !== 'ADMIN') {
+    return <div className="h-screen flex items-center justify-center text-red-500 font-bold">ACCESS DENIED</div>;
+  }
+
   const [tab, setTab] = useState<'USERS' | 'REQUESTS' | 'AUDIT'>('REQUESTS'); // Default to Inbox
   const [users, setUsers] = useState<User[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
@@ -1059,25 +1072,22 @@ function CruzPhamTriviaApp() {
                else setView('ADMIN_DASHBOARD');
             }
           } else {
-            // User Logic
+            // User Logic - STRICT STUDIO ROUTING
             setTemplates(StorageService.getTemplates(restoredSession.username, 'USER'));
+            
+            if (isDirectorMode) {
+               setView('DIRECTOR_DETACHED');
+               setHotkeysEnabled(false);
+            } else if (activeGame?.isActive) {
+               setView('GAME');
+            } else {
+               // Force users to dashboard, never admin
+               setView('DASHBOARD');
+            }
             
             // Check for onboarding (only if not restoring active game or director)
             if (!activeGame && !isDirectorMode && !storedEventName) {
                setShowOnboarding(true);
-            }
-
-            if (activeGame) {
-               if (isDirectorMode) {
-                 setView('DIRECTOR_DETACHED');
-                 setHotkeysEnabled(false);
-               } else if (activeGame.isActive) {
-                 setView('GAME');
-               } else {
-                 setView('DASHBOARD');
-               }
-            } else {
-               setView(isDirectorMode ? 'DIRECTOR_DETACHED' : 'DASHBOARD');
             }
           }
           setIsRestoring(false);
@@ -1167,6 +1177,7 @@ function CruzPhamTriviaApp() {
       if (res.success && res.session) {
         setSession(res.session);
         localStorage.setItem(CLIENT_SESSION_KEY, res.session.sessionId);
+        // STRICT ROUTING BASED ON ROLE
         setView(res.isAdmin ? 'ADMIN_DASHBOARD' : 'DASHBOARD');
       } else {
         setError(res.error || "Login Failed");

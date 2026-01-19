@@ -57,6 +57,16 @@ const hashPassword = async (password: string, salt: string): Promise<string> => 
   return bufferToHex(hash);
 };
 
+// Helper: Normalize token input (remove dashes, spaces, make lowercase)
+const normalizeToken = (token: string): string => {
+  return token.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+};
+
+// Helper: Normalize username (trim, lowercase)
+const normalizeUsername = (username: string): string => {
+  return username.trim().toLowerCase();
+};
+
 // --- DB HELPERS ---
 const getDB = <T>(key: string): T[] => {
   try {
@@ -138,7 +148,9 @@ export const StorageService = {
 
   login: async (username: string, token: string): Promise<{ success: boolean; session?: Session; error?: string; isAdmin?: boolean }> => {
     const cid = crypto.randomUUID();
-    const cleanUsername = username.trim().toLowerCase();
+    const cleanUsername = normalizeUsername(username);
+    // Normalize the token input to match stored raw tokens (removing UI formatting like dashes)
+    const cleanToken = normalizeToken(token);
     
     if (!checkRateLimit(`login_${cleanUsername}`)) {
       return { success: false, error: "Too many attempts. Please wait." };
@@ -146,10 +158,10 @@ export const StorageService = {
 
     // 1. CHECK ADMINS FIRST
     const admins = getDB<Admin>(KEYS.ADMINS);
-    const admin = admins.find(a => a.username === cleanUsername);
+    const admin = admins.find(a => normalizeUsername(a.username) === cleanUsername);
 
     if (admin) {
-      const attemptHash = await hashPassword(token, admin.salt);
+      const attemptHash = await hashPassword(cleanToken, admin.salt);
       if (attemptHash === admin.passwordHash) {
         // Success Admin Login
         const session: Session = {
@@ -179,7 +191,7 @@ export const StorageService = {
 
     // 2. CHECK USERS
     const users = getDB<User>(KEYS.USERS);
-    const user = users.find(u => u.username === cleanUsername);
+    const user = users.find(u => normalizeUsername(u.username) === cleanUsername);
 
     if (user) {
       if (user.status !== 'ACTIVE') {
@@ -188,13 +200,17 @@ export const StorageService = {
       }
 
       const allTokens = getDB<AuthToken>(KEYS.TOKENS);
+      // Filter valid tokens for this user
       const userTokens = allTokens.filter(t => t.userId === user.id && !t.revokedAt);
       
       let validToken: AuthToken | null = null;
       
       for (const t of userTokens) {
         if (t.expiresAt && Date.now() > t.expiresAt) continue;
-        const attemptHash = await hashPassword(token, t.salt);
+        
+        // Hash the cleaned input token with the stored salt
+        const attemptHash = await hashPassword(cleanToken, t.salt);
+        
         if (attemptHash === t.tokenHash) {
           validToken = t;
           break;
@@ -203,6 +219,7 @@ export const StorageService = {
 
       if (validToken) {
         let sessions = getDB<Session>(KEYS.SESSIONS);
+        // Enforce single session per user - clear old sessions
         sessions = sessions.filter(s => s.userId !== user.id);
         
         const session: Session = {
@@ -316,16 +333,17 @@ export const StorageService = {
   // --- ADMIN: USER PROVISIONING ---
 
   adminCreateUser: async (adminId: string, username: string): Promise<{ success: boolean; user?: User; error?: string }> => {
-    const cleanUsername = username.trim().toLowerCase();
+    // Force normalization for consistent lookup
+    const cleanUsername = normalizeUsername(username);
     const users = getDB<User>(KEYS.USERS);
     
-    if (users.find(u => u.username === cleanUsername)) {
+    if (users.find(u => normalizeUsername(u.username) === cleanUsername)) {
       return { success: false, error: "Username taken." };
     }
 
     const newUser: User = {
       id: crypto.randomUUID(),
-      username: cleanUsername,
+      username: cleanUsername, // Store normalized
       status: 'ACTIVE',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -340,7 +358,7 @@ export const StorageService = {
 
   adminIssueToken: async (adminId: string, userId: string, expiryDurationMs: number | null): Promise<string> => {
     const salt = generateSalt();
-    const token = generateSecureToken();
+    const token = generateSecureToken(); // Raw hex token
     const hash = await hashPassword(token, salt);
 
     const newToken: AuthToken = {
@@ -360,7 +378,7 @@ export const StorageService = {
 
     StorageService.logAudit(adminId, 'ISSUE_TOKEN', userId, newToken.id, { expiry: expiryDurationMs });
     
-    return token;
+    return token; // Return raw token for one-time display
   },
 
   adminRevokeToken: (adminId: string, tokenId: string) => {

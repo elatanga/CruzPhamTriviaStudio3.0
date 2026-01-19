@@ -60,7 +60,7 @@ export const UI_TEXT = {
     },
     errors: {
       rateLimit: "Too many attempts. Please wait a moment.",
-      invalid: "Identity or Token incorrect.",
+      invalid: "Invalid Username or Token. Please try again.",
       system: "Studio connection error.",
       expired: "Session expired. Please log in again.",
       revoked: "Access revoked. Contact Administrator."
