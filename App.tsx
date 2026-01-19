@@ -8,6 +8,7 @@ import { logger } from './services/loggerService';
 import { soundService } from './services/soundService'; 
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider, useToast } from './context/ToastContext';
+import { UI_TEXT } from './constants/uiText';
 
 // --- SVGs & Icons ---
 const Icons = {
@@ -52,6 +53,14 @@ const Button: React.FC<{
   return <button onClick={onClick} className={`${base} ${styles[variant]} ${className}`} disabled={disabled} title={title}>{children}</button>;
 };
 
+// --- GLOBAL HEADER COMPONENT ---
+const BrandHeader: React.FC<{ className?: string }> = ({ className = "" }) => (
+  <div className={`flex items-center justify-between px-3 md:px-4 py-1 bg-luxury-black border-b border-gold-900/30 text-[9px] md:text-[10px] tracking-widest font-serif text-gold-600 select-none ${className}`}>
+    <span className="font-bold">{UI_TEXT.brand.studioName}</span>
+    <span className="opacity-50 hidden sm:inline">{UI_TEXT.brand.appName}</span>
+  </div>
+);
+
 // --- DIRECTOR PLACEHOLDER COMPONENT (For Main Window when detached) ---
 const DirectorPlaceholder: React.FC<{
   onBringBack: () => void;
@@ -62,10 +71,10 @@ const DirectorPlaceholder: React.FC<{
        <div className="text-gold-500 animate-pulse mb-4">
          <Icons.Detach />
        </div>
-       <h3 className="text-gold-200 font-bold tracking-widest text-center mb-2">DIRECTOR POPPED OUT</h3>
-       <p className="text-zinc-500 text-xs text-center mb-6">Controls are active in a separate window.</p>
+       <h3 className="text-gold-200 font-bold tracking-widest text-center mb-2">{UI_TEXT.director.placeholder.title}</h3>
+       <p className="text-zinc-500 text-xs text-center mb-6">{UI_TEXT.director.placeholder.desc}</p>
        <Button variant="secondary" onClick={onBringBack} className="w-full flex items-center gap-2">
-          <Icons.Attach /> BRING BACK
+          <Icons.Attach /> {UI_TEXT.director.placeholder.button}
        </Button>
     </div>
   );
@@ -158,12 +167,15 @@ const DirectorPanel: React.FC<{
   };
 
   return (
-    <div className={`bg-luxury-black border-l border-gold-600 shadow-2xl z-50 flex flex-col font-sans h-full pt-safe pb-safe ${className}`}>
-      {/* Header */}
+    <div className={`bg-luxury-black border-l border-gold-600 shadow-2xl z-50 flex flex-col font-sans h-full ${className}`}>
+      {/* Sticky Brand Header */}
+      <BrandHeader className="shrink-0" />
+      
+      {/* Controls Header */}
       <div className="h-12 border-b border-gold-800 bg-luxury-panel flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-2">
-           <span className="text-gold-400 font-bold tracking-widest text-xs truncate">{isDetached ? 'DIRECTOR [DETACHED]' : 'DIRECTOR CONTROL'}</span>
-           {isDetached && <span className="text-[10px] text-green-500 animate-pulse hidden sm:inline">● LIVE SYNC</span>}
+           <span className="text-gold-400 font-bold tracking-widest text-xs truncate">{isDetached ? UI_TEXT.director.detachedTitle : UI_TEXT.director.title}</span>
+           {isDetached && <span className="text-[10px] text-green-500 animate-pulse hidden sm:inline">● {UI_TEXT.director.sync}</span>}
         </div>
         <div className="flex gap-1">
            {toggleHotkeys && (
@@ -171,30 +183,35 @@ const DirectorPanel: React.FC<{
                <Icons.Keyboard />
              </Button>
            )}
-           {!isDetached && openDetached && <Button variant="icon" onClick={openDetached} title="Pop Out"><Icons.Detach/></Button>}
-           {!isDetached && onClose && <Button variant="icon" onClick={onClose} title="Close"><Icons.Close/></Button>}
+           {!isDetached && openDetached && <Button variant="icon" onClick={openDetached} title={UI_TEXT.director.popout}><Icons.Detach/></Button>}
+           {!isDetached && onClose && <Button variant="icon" onClick={onClose} title={UI_TEXT.director.close}><Icons.Close/></Button>}
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-gold-900 bg-black shrink-0 overflow-x-auto">
-         {['GAME', 'PLAYERS', 'QUESTIONS', 'LOG'].map(t => (
+         {[
+            { id: 'GAME', label: UI_TEXT.director.tabs.game },
+            { id: 'PLAYERS', label: UI_TEXT.director.tabs.players },
+            { id: 'QUESTIONS', label: UI_TEXT.director.tabs.questions },
+            { id: 'LOG', label: UI_TEXT.director.tabs.log }
+         ].map(t => (
            <button 
-             key={t} 
-             onClick={() => setTab(t as any)}
-             className={`flex-1 py-3 text-[10px] font-bold tracking-wider hover:bg-gold-900/20 px-2 ${tab === t ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}
+             key={t.id} 
+             onClick={() => setTab(t.id as any)}
+             className={`flex-1 py-3 text-[10px] font-bold tracking-wider hover:bg-gold-900/20 px-2 ${tab === t.id ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}
            >
-             {t}
+             {t.label}
            </button>
          ))}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar pb-safe">
          {tab === 'GAME' && (
            <div className="space-y-6">
               <div>
-                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Game Title</label>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">{UI_TEXT.director.gameTab.titleLabel}</label>
                  <input 
                    className="w-full bg-black border border-zinc-700 p-2 text-gold-200 text-sm focus:border-gold-500 outline-none" 
                    value={gameState.gameTitle} 
@@ -203,12 +220,12 @@ const DirectorPanel: React.FC<{
               </div>
 
               <div>
-                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Live Controls</label>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">{UI_TEXT.director.gameTab.actionsLabel}</label>
                  <div className="grid grid-cols-2 gap-2">
-                    <Button variant="primary" disabled={!isRevealed} onClick={() => forceResolve('AWARD')} title={!isRevealed ? "Reveal First" : "Force Award"}>FORCE AWARD</Button>
-                    <Button variant="danger" disabled={!isRevealed} onClick={() => forceResolve('VOID')} title={!isRevealed ? "Reveal First" : "Force Void"}>FORCE VOID</Button>
-                    <Button variant="secondary" disabled={!gameState.currentQuestion} onClick={() => setGameState(p => ({...p, currentQuestion: null}))}>FORCE CLOSE</Button>
-                    <Button variant="secondary" onClick={() => setGameState(p => ({...p, timer: 0, isTimerRunning: false}))}>STOP TIMER</Button>
+                    <Button variant="primary" disabled={!isRevealed} onClick={() => forceResolve('AWARD')} title={!isRevealed ? "Reveal First" : UI_TEXT.director.gameTab.forceAward}>{UI_TEXT.director.gameTab.forceAward}</Button>
+                    <Button variant="danger" disabled={!isRevealed} onClick={() => forceResolve('VOID')} title={!isRevealed ? "Reveal First" : UI_TEXT.director.gameTab.forceVoid}>{UI_TEXT.director.gameTab.forceVoid}</Button>
+                    <Button variant="secondary" disabled={!gameState.currentQuestion} onClick={() => setGameState(p => ({...p, currentQuestion: null}))}>{UI_TEXT.director.gameTab.forceClose}</Button>
+                    <Button variant="secondary" onClick={() => setGameState(p => ({...p, timer: 0, isTimerRunning: false}))}>{UI_TEXT.director.gameTab.stopTimer}</Button>
                  </div>
                  {!isRevealed && gameState.currentQuestion && (
                     <div className="text-[9px] text-red-500 mt-1 text-center border border-red-900/30 p-1">⚠ REVEAL REQUIRED</div>
@@ -216,7 +233,7 @@ const DirectorPanel: React.FC<{
               </div>
 
               <div>
-                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Timer Set</label>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">{UI_TEXT.director.gameTab.timerLabel}</label>
                  <div className="flex gap-2">
                     {[10, 15, 30, 60].map(sec => (
                       <button key={sec} onClick={() => setGameState(p => ({...p, timer: sec}))} className="flex-1 bg-zinc-900 border border-zinc-700 text-gold-500 text-xs py-1 hover:bg-zinc-800">{sec}s</button>
@@ -225,7 +242,6 @@ const DirectorPanel: React.FC<{
               </div>
            </div>
          )}
-         {/* Other tabs kept same logic, UI adapts via flex-1 */}
          {tab === 'PLAYERS' && (
            <div className="space-y-4">
               {gameState.players.map((p, i) => (
@@ -442,8 +458,6 @@ function CruzPhamTriviaApp() {
          if (gameState.isActive) {
             broadcastRef.current?.postMessage({ type: 'STATE_UPDATE', payload: gameState });
          }
-         // Also inform that director is popped out locally if we are the main window
-         // (Not strictly necessary for state, but good for handshake)
       } else if (event.data.type === 'DIRECTOR_CLOSED') {
          // Detached window closed, restore panel here
          setIsDirectorPoppedOut(false);
@@ -527,7 +541,7 @@ function CruzPhamTriviaApp() {
           setRegisterSuccessToken(res.token);
           showToast("Identity Generated Successfully", 'success');
         } else {
-          setAuthError(res.error || "Registration failed");
+          setAuthError(res.error || UI_TEXT.auth.errors.invalid);
           showToast(res.error || "Registration failed", 'error');
         }
       } else {
@@ -538,12 +552,12 @@ function CruzPhamTriviaApp() {
           setTemplates(StorageService.getTemplates(res.session.username));
           showToast("Welcome to the Studio", 'success');
         } else {
-          setAuthError(res.error || "Login failed");
+          setAuthError(res.error || UI_TEXT.auth.errors.invalid);
           showToast("Invalid Credentials", 'error');
         }
       }
     } catch {
-      setAuthError("System Error");
+      setAuthError(UI_TEXT.auth.errors.system);
       showToast("Critical Authentication Error", 'error');
     } finally {
       setAuthLoading(false);
@@ -875,48 +889,56 @@ function CruzPhamTriviaApp() {
 
   if (view === 'LOGIN') {
     return (
-      <div className="h-dvh w-full flex items-center justify-center bg-luxury-black bg-luxury-radial font-serif text-gold-400">
-        <div className="w-[90%] max-w-[400px] border border-gold-600/30 bg-luxury-dark/95 backdrop-blur-xl p-8 rounded-sm shadow-glow flex flex-col items-center relative">
-          {!isOnline && <div className="absolute top-2 right-2 text-red-500 text-[10px] flex items-center gap-1"><Icons.WifiOff/> OFFLINE</div>}
-          <div className="mb-8 text-center">
-            <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gold-gradient-text tracking-widest">CRUZPHAM</h1>
-            <p className="text-[10px] tracking-[0.6em] text-gold-600 mt-1">TRIVIA STUDIOS</p>
-          </div>
-
-          <div className="flex w-full mb-6 border-b border-gold-900">
-            {['LOGIN', 'REGISTER'].map(m => (
-              <button key={m} onClick={() => { setAuthMode(m as any); setAuthError(null); setRegisterSuccessToken(null); soundService.playClick(); }}
-                className={`flex-1 py-3 text-xs tracking-widest transition-colors ${authMode === m ? 'text-gold-300 border-b-2 border-gold-400' : 'text-zinc-600 hover:text-gold-700'}`}>
-                {m === 'LOGIN' ? 'ACCESS' : 'INITIALIZE'}
-              </button>
-            ))}
-          </div>
-
-          {authError && <div className="w-full text-center text-red-400 text-xs mb-4 bg-red-900/10 py-2 border border-red-900/30">{authError}</div>}
-
-          {authMode === 'LOGIN' ? (
-            <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(false, e.target.username.value, e.target.token.value); }}>
-              <input name="username" placeholder="IDENTITY" className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
-              <input name="token" type="password" placeholder="SECRET KEY" className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
-              <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? 'AUTHENTICATING...' : 'ENTER STUDIO'}</Button>
-            </form>
-          ) : registerSuccessToken ? (
-            <div className="w-full text-center animate-pulse">
-              <p className="text-xs text-green-500 mb-2 font-sans font-bold">IDENTITY GENERATED</p>
-              <div className="bg-gold-200 text-black font-mono text-sm p-4 break-all border-2 border-gold-500 mb-2 cursor-pointer hover:bg-white" onClick={() => navigator.clipboard.writeText(registerSuccessToken)}>
-                {registerSuccessToken}
-              </div>
-              <p className="text-[9px] text-red-500 uppercase font-bold tracking-wider mb-4">Copy now. Irretrievable.</p>
-              <Button className="w-full" onClick={() => { setAuthMode('LOGIN'); setRegisterSuccessToken(null); soundService.playClick(); }}>PROCEED</Button>
+      <div className="h-dvh w-full flex flex-col bg-luxury-black bg-luxury-radial font-serif text-gold-400 overflow-hidden">
+        <BrandHeader />
+        <div className="flex-1 flex flex-col items-center justify-center p-4">
+            <div className="w-[90%] max-w-[400px] border border-gold-600/30 bg-luxury-dark/95 backdrop-blur-xl p-8 rounded-sm shadow-glow flex flex-col items-center relative">
+            {!isOnline && <div className="absolute top-2 right-2 text-red-500 text-[10px] flex items-center gap-1"><Icons.WifiOff/> {UI_TEXT.auth.offline}</div>}
+            
+            <div className="mb-8 text-center">
+                <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gold-gradient-text tracking-widest">{UI_TEXT.brand.appName}</h1>
+                <p className="text-[10px] tracking-[0.6em] text-gold-600 mt-1">TRIVIA STUDIOS</p>
             </div>
-          ) : (
-             <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(true, e.target.username.value); }}>
-               <p className="text-[10px] text-center text-zinc-500">Secure token generation.</p>
-               <input name="username" placeholder="NEW IDENTITY" className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
-               <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? 'GENERATING...' : 'CREATE IDENTITY'}</Button>
-             </form>
-          )}
-          <div className="mt-8 text-[9px] text-zinc-700 tracking-widest text-center">SECURE ENCLAVE • SINGLE SESSION</div>
+
+            <div className="flex w-full mb-6 border-b border-gold-900">
+                {['LOGIN', 'REGISTER'].map(m => (
+                <button key={m} onClick={() => { setAuthMode(m as any); setAuthError(null); setRegisterSuccessToken(null); soundService.playClick(); }}
+                    className={`flex-1 py-3 text-xs tracking-widest transition-colors ${authMode === m ? 'text-gold-300 border-b-2 border-gold-400' : 'text-zinc-600 hover:text-gold-700'}`}>
+                    {m === 'LOGIN' ? UI_TEXT.auth.tabs.login : UI_TEXT.auth.tabs.register}
+                </button>
+                ))}
+            </div>
+
+            {authError && <div className="w-full text-center text-red-400 text-xs mb-4 bg-red-900/10 py-2 border border-red-900/30">{authError}</div>}
+
+            {authMode === 'LOGIN' ? (
+                <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(false, e.target.username.value, e.target.token.value); }}>
+                <div className="space-y-1">
+                    <input name="username" placeholder={UI_TEXT.auth.login.usernamePlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
+                </div>
+                <div className="space-y-1">
+                    <input name="token" type="password" placeholder={UI_TEXT.auth.login.tokenPlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
+                </div>
+                <p className="text-[10px] text-zinc-600 text-center px-4">{UI_TEXT.auth.login.helper}</p>
+                <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? UI_TEXT.auth.login.authenticating : UI_TEXT.auth.login.button}</Button>
+                </form>
+            ) : registerSuccessToken ? (
+                <div className="w-full text-center animate-pulse">
+                <p className="text-xs text-green-500 mb-2 font-sans font-bold">{UI_TEXT.auth.register.successTitle}</p>
+                <div className="bg-gold-200 text-black font-mono text-sm p-4 break-all border-2 border-gold-500 mb-2 cursor-pointer hover:bg-white" onClick={() => navigator.clipboard.writeText(registerSuccessToken)}>
+                    {registerSuccessToken}
+                </div>
+                <p className="text-[9px] text-red-500 uppercase font-bold tracking-wider mb-4">{UI_TEXT.auth.register.copyWarning}</p>
+                <Button className="w-full" onClick={() => { setAuthMode('LOGIN'); setRegisterSuccessToken(null); soundService.playClick(); }}>{UI_TEXT.auth.register.proceedButton}</Button>
+                </div>
+            ) : (
+                <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(true, e.target.username.value); }}>
+                <p className="text-[10px] text-center text-zinc-500">{UI_TEXT.auth.register.desc}</p>
+                <input name="username" placeholder={UI_TEXT.auth.register.usernamePlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
+                <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? UI_TEXT.auth.register.generating : UI_TEXT.auth.register.button}</Button>
+                </form>
+            )}
+            </div>
         </div>
       </div>
     );
@@ -924,10 +946,13 @@ function CruzPhamTriviaApp() {
 
   // --- Layout Wrappers ---
   const Header = () => (
+    <>
+    {/* Global Top Brand Header */}
+    <BrandHeader />
     <header className="h-[6dvh] min-h-[48px] flex items-center justify-between px-3 md:px-4 bg-gradient-to-r from-luxury-black to-luxury-dark border-b border-gold-900/50 shrink-0 z-30 pt-safe">
       <div className="flex items-center gap-2 md:gap-4 overflow-hidden">
         <span className="font-serif font-bold text-base md:text-lg text-gold-400 tracking-widest truncate">
-          {gameState.isActive && gameState.gameTitle ? gameState.gameTitle : 'CRUZPHAM'}
+          {gameState.isActive && gameState.gameTitle ? gameState.gameTitle : UI_TEXT.brand.appName}
         </span>
         {gameState.isActive && (
           <div className="flex items-center gap-2 bg-black/40 px-2 py-1 rounded border border-gold-900/30">
@@ -951,7 +976,7 @@ function CruzPhamTriviaApp() {
               </>
             ) : (
               <>
-                 <span className="text-green-600 animate-pulse">● LIVE</span>
+                 <span className="text-green-600 animate-pulse">● {UI_TEXT.game.live}</span>
                  <button onClick={() => setGameState(p => ({...p, directorMode: !p.directorMode}))} className={`transition-colors flex items-center gap-1 ${gameState.directorMode ? 'text-white' : 'text-gold-500 hover:text-white'}`}><Icons.Edit/> DIRECTOR</button>
                  <button onClick={() => {setView('DASHBOARD'); soundService.playClick();}} className="text-gold-500 hover:text-white transition-colors">END</button>
               </>
@@ -967,11 +992,12 @@ function CruzPhamTriviaApp() {
         </div>
       </div>
     </header>
+    </>
   );
 
   const Footer = () => (
     <div className="hidden md:block absolute bottom-2 right-4 text-[9px] text-zinc-800 font-serif tracking-widest pointer-events-none select-none z-10 pb-safe">
-      CREATED BY EL CRUZPHAM • POWERED BY CRUZPHAM TRIVIA STUDIOS
+      {UI_TEXT.brand.footer}
     </div>
   );
 
@@ -1031,36 +1057,43 @@ function CruzPhamTriviaApp() {
         <Header />
         <div className="flex-1 p-4 md:p-6 flex flex-col min-h-0 overflow-y-auto">
           <div className="flex justify-between items-center mb-4 shrink-0">
-            <h2 className="text-xl md:text-2xl font-serif text-gold-200 tracking-widest">SHOW LIBRARY</h2>
-            <Button onClick={startCreation} variant="primary">NEW SHOW</Button>
+            <h2 className="text-xl md:text-2xl font-serif text-gold-200 tracking-widest">{UI_TEXT.dashboard.title}</h2>
+            <Button onClick={startCreation} variant="primary">{UI_TEXT.dashboard.newButton}</Button>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pb-20 md:pb-0">
-            {pageTemplates.map(t => (
-              <div key={t.id} className="relative group border border-gold-900/30 bg-luxury-panel/50 hover:bg-luxury-panel hover:border-gold-600/50 transition-all p-4 flex flex-col justify-between min-h-[140px]">
-                <div>
-                  <h3 className="font-bold text-gold-100 truncate tracking-wide">{t.name}</h3>
-                  <p className="text-[10px] text-zinc-600 mt-1 uppercase">{t.cols} x {t.rows} GRID</p>
+          {pageTemplates.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-zinc-600">
+                <Icons.Menu />
+                <p className="mt-4 text-sm font-sans">{UI_TEXT.dashboard.emptyState}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pb-20 md:pb-0">
+                {pageTemplates.map(t => (
+                <div key={t.id} className="relative group border border-gold-900/30 bg-luxury-panel/50 hover:bg-luxury-panel hover:border-gold-600/50 transition-all p-4 flex flex-col justify-between min-h-[140px]">
+                    <div>
+                    <h3 className="font-bold text-gold-100 truncate tracking-wide">{t.name}</h3>
+                    <p className="text-[10px] text-zinc-600 mt-1 uppercase">{t.cols} x {t.rows} GRID</p>
+                    </div>
+                    <div className="flex gap-2 mt-4 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="secondary" className="flex-1 py-1" onClick={() => { setEditingTemplate(t); setIsEditorOpen(true); soundService.playClick(); }}>{UI_TEXT.dashboard.card.edit}</Button>
+                    <Button variant="primary" className="flex-1 py-1" onClick={() => startGame(t)}>{UI_TEXT.dashboard.card.live}</Button>
+                    <button onClick={() => {
+                        if(session) {
+                        StorageService.deleteTemplate(session.username, t.id);
+                        setTemplates(StorageService.getTemplates(session.username));
+                        showToast("Template Deleted", 'info');
+                        soundService.playVoid();
+                        }
+                    }} className="text-red-900 hover:text-red-500 p-1"><Icons.Trash/></button>
+                    </div>
                 </div>
-                <div className="flex gap-2 mt-4 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                   <Button variant="secondary" className="flex-1 py-1" onClick={() => { setEditingTemplate(t); setIsEditorOpen(true); soundService.playClick(); }}>EDIT</Button>
-                   <Button variant="primary" className="flex-1 py-1" onClick={() => startGame(t)}>LIVE</Button>
-                   <button onClick={() => {
-                     if(session) {
-                       StorageService.deleteTemplate(session.username, t.id);
-                       setTemplates(StorageService.getTemplates(session.username));
-                       showToast("Template Deleted", 'info');
-                       soundService.playVoid();
-                     }
-                   }} className="text-red-900 hover:text-red-500 p-1"><Icons.Trash/></button>
-                </div>
-              </div>
-            ))}
-          </div>
+                ))}
+            </div>
+          )}
 
           <div className="h-12 shrink-0 flex items-center justify-center gap-4 mt-auto py-4">
              <Button variant="icon" disabled={dashboardPage === 0} onClick={() => {setDashboardPage(p => p - 1); soundService.playClick();}}><Icons.ChevronLeft/></Button>
-             <span className="text-xs font-mono text-zinc-600">PAGE {dashboardPage + 1}</span>
+             <span className="text-xs font-mono text-zinc-600">{UI_TEXT.dashboard.pagination} {dashboardPage + 1}</span>
              <Button variant="icon" disabled={(dashboardPage + 1) * ITEMS_PER_PAGE >= templates.length} onClick={() => {setDashboardPage(p => p + 1); soundService.playClick();}}><Icons.ChevronRight/></Button>
           </div>
         </div>
@@ -1072,11 +1105,11 @@ function CruzPhamTriviaApp() {
               <div className="w-full max-w-4xl bg-luxury-panel border border-gold-600 shadow-glow-strong flex flex-col md:flex-row rounded-sm overflow-hidden animate-in fade-in zoom-in duration-300">
                  {/* LEFT: Controls */}
                  <div className="md:w-1/3 p-8 border-r border-gold-900/50 flex flex-col gap-8 bg-gradient-to-br from-luxury-dark to-black">
-                    <h2 className="text-xl font-serif text-gold-400 tracking-widest border-b border-gold-800 pb-2">PRODUCTION SETUP</h2>
+                    <h2 className="text-xl font-serif text-gold-400 tracking-widest border-b border-gold-800 pb-2">{UI_TEXT.setup.title}</h2>
                     
                     <div className="space-y-4">
                        <div>
-                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">CATEGORIES (COLUMNS)</label>
+                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">{UI_TEXT.setup.colsLabel}</label>
                           <div className="flex items-center gap-4">
                              <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, cols: Math.max(1, p.cols - 1)}))}>-</Button>
                              <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.cols}</span>
@@ -1085,18 +1118,19 @@ function CruzPhamTriviaApp() {
                        </div>
                        
                        <div>
-                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">CLUES PER CATEGORY (ROWS)</label>
+                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">{UI_TEXT.setup.rowsLabel}</label>
                           <div className="flex items-center gap-4">
                              <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.max(1, p.rows - 1)}))}>-</Button>
                              <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.rows}</span>
                              <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.min(10, p.rows + 1)}))}>+</Button>
                           </div>
+                          <p className="text-[9px] text-zinc-600 mt-2">{UI_TEXT.setup.rowsHelper}</p>
                        </div>
                     </div>
 
                     <div className="mt-auto flex flex-col gap-3">
-                       <Button variant="primary" onClick={handleCreateFromSetup} className="py-4 text-base">INITIALIZE GRID</Button>
-                       <Button variant="ghost" onClick={() => setIsSetupOpen(false)}>CANCEL</Button>
+                       <Button variant="primary" onClick={handleCreateFromSetup} className="py-4 text-base">{UI_TEXT.setup.button}</Button>
+                       <Button variant="ghost" onClick={() => setIsSetupOpen(false)}>{UI_TEXT.setup.cancel}</Button>
                     </div>
                  </div>
 
@@ -1129,22 +1163,22 @@ function CruzPhamTriviaApp() {
           <div className="absolute inset-0 z-50 bg-black flex flex-col">
             <div className="h-16 border-b border-gold-900 flex items-center justify-between px-6 bg-luxury-panel shrink-0">
                <div className="flex items-center gap-4 overflow-hidden">
-                 <span className="text-gold-500 font-bold hidden sm:inline">EDITOR</span>
+                 <span className="text-gold-500 font-bold hidden sm:inline">{UI_TEXT.editor.title}</span>
                  <input className="bg-black border border-zinc-800 text-gold-100 px-2 py-1 focus:border-gold-500 outline-none w-32 md:w-64" value={editingTemplate.name} onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} />
                </div>
                <div className="flex items-center gap-2 md:gap-4">
                  <div className="hidden md:flex items-center gap-2 bg-black/30 p-1 border border-zinc-800 rounded">
-                    <span className="text-[10px] text-purple-400 pl-2">AI ASSIST</span>
-                    <input className="bg-transparent text-white text-xs outline-none w-24" placeholder="Topic..." value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    <span className="text-[10px] text-purple-400 pl-2">{UI_TEXT.editor.aiLabel}</span>
+                    <input className="bg-transparent text-white text-xs outline-none w-24" placeholder={UI_TEXT.editor.aiPlaceholder} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
                     <select className="bg-black text-gold-400 text-[10px] border border-zinc-800 h-6 outline-none focus:border-gold-500 cursor-pointer" value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)}>
                       <option value="Easy">EASY</option>
                       <option value="Medium">MED</option>
                       <option value="Hard">HARD</option>
                       <option value="Expert">EXPT</option>
                     </select>
-                    <Button variant="secondary" className="py-0 h-6 text-[10px]" onClick={handleAi} disabled={isGenerating}>{isGenerating ? '...' : 'GEN'}</Button>
+                    <Button variant="secondary" className="py-0 h-6 text-[10px]" onClick={handleAi} disabled={isGenerating}>{isGenerating ? '...' : UI_TEXT.editor.aiButton}</Button>
                  </div>
-                 <Button variant="secondary" onClick={() => { setIsEditorOpen(false); setEditingTemplate(null); soundService.playClick(); }}>CANCEL</Button>
+                 <Button variant="secondary" onClick={() => { setIsEditorOpen(false); setEditingTemplate(null); soundService.playClick(); }}>{UI_TEXT.editor.cancel}</Button>
                  <Button variant="primary" onClick={() => { 
                    if(session && editingTemplate) { 
                      const saved = StorageService.saveTemplate(session.username, editingTemplate);
@@ -1158,7 +1192,7 @@ function CruzPhamTriviaApp() {
                         soundService.playVoid();
                      }
                    }
-                 }}>SAVE</Button>
+                 }}>{UI_TEXT.editor.save}</Button>
                </div>
             </div>
             {/* Dynamic Grid Layout for Editor */}
@@ -1178,7 +1212,7 @@ function CruzPhamTriviaApp() {
                              }}
                              className={`px-1 rounded border ${q.isDoubleOrNothing ? 'text-red-500 border-red-500' : 'text-zinc-700 border-zinc-800 hover:text-zinc-400'}`}
                           >
-                             {q.isDoubleOrNothing ? 'D.O.N' : 'NORMAL'}
+                             {q.isDoubleOrNothing ? UI_TEXT.editor.don : 'NORMAL'}
                           </button>
                         </div>
                         <textarea className="bg-black text-zinc-300 text-xs p-1 resize-none h-12 border border-zinc-800 focus:border-gold-600 outline-none" value={q.question} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].question = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
@@ -1282,19 +1316,19 @@ function CruzPhamTriviaApp() {
               {/* DESKTOP FOOTER FEED (Hidden on Mobile) */}
               <div className="hidden md:flex h-8 shrink-0 items-center justify-between gap-4 bg-luxury-panel/80 rounded border border-zinc-900 px-4 shadow-lg backdrop-blur-sm">
                  <div className="flex items-center gap-4 text-[9px] text-zinc-600 font-bold uppercase tracking-widest overflow-hidden">
-                     <span>[SPACE] REVEAL</span>
-                     <span>[ENTER] AWARD</span>
-                     <span>[ESC] VOID</span>
-                     <span>[BKSP] BACK</span>
-                     <span>[ARROWS] PLAYER</span>
+                     <span>{UI_TEXT.game.tooltips.reveal}</span>
+                     <span>{UI_TEXT.game.tooltips.award}</span>
+                     <span>{UI_TEXT.game.tooltips.void}</span>
+                     <span>{UI_TEXT.game.tooltips.return}</span>
+                     <span>{UI_TEXT.game.tooltips.playerSelect}</span>
                  </div>
                  <div className="flex items-center gap-3 pl-4 border-l border-zinc-800">
                     <div className="flex items-center gap-1.5">
                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                       <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest">LIVE</span>
+                       <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest">{UI_TEXT.game.live}</span>
                     </div>
                     <div className="text-[10px] font-mono text-gold-400 font-bold uppercase tracking-wide min-w-[100px] text-right">
-                       {gameState.activityLog[0] || "READY"}
+                       {gameState.activityLog[0] || UI_TEXT.game.ready}
                     </div>
                  </div>
               </div>
@@ -1325,12 +1359,12 @@ function CruzPhamTriviaApp() {
                  <div className="grid grid-cols-4 gap-2">
                     {gameState.currentQuestionState === QuestionState.REVEALED ? (
                       <>
-                        <Button variant="primary" className="col-span-2" onClick={() => resolveQuestion('AWARD')}>AWARD</Button>
-                        <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>BACK</Button>
-                        <Button variant="danger" onClick={() => resolveQuestion('VOID')}>VOID</Button>
+                        <Button variant="primary" className="col-span-2" onClick={() => resolveQuestion('AWARD')}>{UI_TEXT.game.controls.award}</Button>
+                        <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>{UI_TEXT.game.controls.back}</Button>
+                        <Button variant="danger" onClick={() => resolveQuestion('VOID')}>{UI_TEXT.game.controls.void}</Button>
                       </>
                     ) : (
-                      <Button variant="primary" className="col-span-4 animate-pulse" onClick={revealAnswer}>REVEAL ANSWER</Button>
+                      <Button variant="primary" className="col-span-4 animate-pulse" onClick={revealAnswer}>{UI_TEXT.game.controls.reveal}</Button>
                     )}
                  </div>
                )}
@@ -1382,7 +1416,7 @@ function CruzPhamTriviaApp() {
                       {isVoided && <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center pointer-events-none"><span className="text-red-500 font-bold text-4xl tracking-[1em] border-4 border-red-900/50 p-8 transform -rotate-12">VOIDED</span></div>}
                       
                       {q.isDoubleOrNothing && !isVoided && (
-                        <div className="absolute top-4 md:top-8 px-4 py-1 md:px-6 md:py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-sm md:text-xl skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">DOUBLE OR NOTHING</div>
+                        <div className="absolute top-4 md:top-8 px-4 py-1 md:px-6 md:py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-sm md:text-xl skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">{UI_TEXT.editor.don}</div>
                       )}
                       
                       <h2 className={`font-serif font-bold leading-tight drop-shadow-lg text-responsive-xl md:text-responsive-hero max-w-4xl my-auto ${isVoided ? 'text-zinc-700 blur-sm' : 'text-white'}`}>{q.question}</h2>
@@ -1409,24 +1443,24 @@ function CruzPhamTriviaApp() {
                              variant="danger" 
                              disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
                              onClick={() => resolveQuestion('VOID')}
-                             title="Void Question (Esc)"
+                             title={UI_TEXT.game.tooltips.void}
                            >
-                             VOID
+                             {UI_TEXT.game.controls.void}
                            </Button>
 
                            <Button 
                              variant="secondary" 
                              disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
                              onClick={() => resolveQuestion('RETURN')}
-                             title="Return to Board (Bksp)"
+                             title={UI_TEXT.game.tooltips.return}
                            >
-                             RETURN
+                             {UI_TEXT.game.controls.return}
                            </Button>
                            
                            {gameState.currentQuestionState !== QuestionState.REVEALED ? (
-                              <Button onClick={revealAnswer} className="w-64 py-4 text-xl shadow-[0_0_20px_rgba(221,184,86,0.2)] animate-pulse">REVEAL</Button>
+                              <Button onClick={revealAnswer} className="w-64 py-4 text-xl shadow-[0_0_20px_rgba(221,184,86,0.2)] animate-pulse">{UI_TEXT.game.controls.reveal}</Button>
                            ) : (
-                              <div className="w-64 text-center text-gold-500 font-bold tracking-widest text-xs opacity-50 select-none">ANSWER REVEALED</div>
+                              <div className="w-64 text-center text-gold-500 font-bold tracking-widest text-xs opacity-50 select-none">{UI_TEXT.game.controls.revealed}</div>
                            )}
 
                            <Button 
@@ -1434,9 +1468,9 @@ function CruzPhamTriviaApp() {
                              disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
                              onClick={() => resolveQuestion('AWARD')} 
                              className={gameState.currentQuestionState === QuestionState.REVEALED ? "w-48 py-3 text-lg" : ""}
-                             title="Award Points (Enter)"
+                             title={UI_TEXT.game.tooltips.award}
                            >
-                             AWARD
+                             {UI_TEXT.game.controls.award}
                            </Button>
                         </>
                       )}
