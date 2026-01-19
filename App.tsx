@@ -80,6 +80,7 @@ function CruzPhamTriviaApp() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [aiPrompt, setAiPrompt] = useState("");
+  const [aiDifficulty, setAiDifficulty] = useState("Medium");
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Auth State
@@ -376,10 +377,10 @@ function CruzPhamTriviaApp() {
     soundService.playClick();
     const cid = crypto.randomUUID();
     setIsGenerating(true);
-    logger.info('AI_GENERATION_START', { prompt: aiPrompt }, cid);
+    logger.info('AI_GENERATION_START', { prompt: aiPrompt, difficulty: aiDifficulty }, cid);
     
     try {
-      const gen = await generateTriviaContent(aiPrompt, editingTemplate.cols, editingTemplate.rows);
+      const gen = await generateTriviaContent(aiPrompt, editingTemplate.cols, editingTemplate.rows, aiDifficulty);
       setEditingTemplate(prev => {
         if (!prev) return null;
         return {
@@ -579,7 +580,13 @@ function CruzPhamTriviaApp() {
                <div className="flex items-center gap-4">
                  <div className="flex items-center gap-2 bg-black/30 p-1 border border-zinc-800 rounded">
                     <span className="text-[10px] text-purple-400 pl-2">AI ASSIST</span>
-                    <input className="bg-transparent text-white text-xs outline-none w-48" placeholder="Topic..." value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    <input className="bg-transparent text-white text-xs outline-none w-32" placeholder="Topic..." value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
+                    <select className="bg-black text-gold-400 text-[10px] border border-zinc-800 h-6 outline-none focus:border-gold-500 cursor-pointer" value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)}>
+                      <option value="Easy">EASY</option>
+                      <option value="Medium">MED</option>
+                      <option value="Hard">HARD</option>
+                      <option value="Expert">EXPT</option>
+                    </select>
                     <Button variant="secondary" className="py-0 h-6 text-[10px]" onClick={handleAi} disabled={isGenerating}>{isGenerating ? '...' : 'GEN'}</Button>
                  </div>
                  <Button variant="secondary" onClick={() => { setIsEditorOpen(false); setEditingTemplate(null); soundService.playClick(); }}>CANCEL</Button>

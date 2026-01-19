@@ -4,13 +4,20 @@ import { GeneratedCategory } from '../types';
 export const generateTriviaContent = async (
   topic: string, 
   numCategories: number, 
-  numRows: number
+  numRows: number,
+  difficulty: string
 ): Promise<GeneratedCategory[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `Generate a Jeopardy-style trivia board about "${topic}".
+  The overall target difficulty is "${difficulty}".
   I need exactly ${numCategories} categories.
-  Each category must have exactly ${numRows} questions, ordered by difficulty (easiest to hardest).
+  Each category must have exactly ${numRows} questions.
+  
+  CRITICAL: The questions within each category MUST scale in difficulty to match their position/points.
+  - The first question in a category (lowest points) must be the easiest relative to the "${difficulty}" setting.
+  - The last question in a category (highest points) must be the hardest relative to the "${difficulty}" setting.
+  
   Return JSON only.`;
 
   try {

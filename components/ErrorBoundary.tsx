@@ -2,7 +2,7 @@ import React, { Component, ErrorInfo, ReactNode } from "react";
 import { logger } from "../services/loggerService";
 
 interface Props {
-  children: ReactNode;
+  children?: ReactNode;
 }
 
 interface State {
@@ -11,13 +11,11 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-    };
-  }
+  // Fix: Explicitly declare state property to satisfy strict TypeScript checks
+  public state: State = {
+    hasError: false,
+    error: null,
+  };
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
@@ -28,6 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public render() {
+    // Fix: Access state safely
     if (this.state.hasError) {
       return (
         <div className="h-screen w-screen bg-black flex flex-col items-center justify-center p-8 text-center border-4 border-red-900/50">
@@ -52,6 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // Fix: Access props correctly from Component inheritance
     return this.props.children;
   }
 }
