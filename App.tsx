@@ -291,12 +291,12 @@ function CruzPhamTriviaApp() {
             if (q.id === questionId) {
               if (action === 'AWARD') {
                 points = q.isDoubleOrNothing ? q.points * 2 : q.points;
-                log = `${prev.players[prev.activePlayerIndex].name} +${points}`;
+                log = `${prev.players[prev.activePlayerIndex].name} +${points}${q.isDoubleOrNothing ? ' [D.O.N!]' : ''}`;
                 logger.audit('GAME_POINTS_AWARDED', { player: prev.activePlayerIndex, points, double: q.isDoubleOrNothing }, cid);
                 return { ...q, state: QuestionState.AWARDED };
               }
               if (action === 'VOID') {
-                log = `VOIDED ${q.points}`;
+                log = `VOIDED ${q.points} PTS`;
                 logger.audit('GAME_QUESTION_VOIDED', { points: q.points }, cid);
                 return { ...q, state: QuestionState.VOIDED };
               }
@@ -679,14 +679,27 @@ function CruzPhamTriviaApp() {
             ))}
           </div>
 
-          {/* LEGEND */}
-          <div className="h-6 shrink-0 flex items-center justify-center gap-6 text-[9px] text-zinc-600 font-bold uppercase tracking-widest bg-black/80 rounded border border-zinc-900">
-             <span>[SPACE] REVEAL</span>
-             <span>[ENTER] AWARD</span>
-             <span>[ESC] VOID</span>
-             <span>[BKSP] RETURN</span>
-             <span>[ARROWS] SELECT PLAYER</span>
-             <span>[+/-] ADJUST</span>
+          {/* FOOTER: CONTROLS & FEED */}
+          <div className="h-8 shrink-0 flex items-center justify-between gap-4 bg-luxury-panel/80 rounded border border-zinc-900 px-4 shadow-lg backdrop-blur-sm">
+             {/* Legend */}
+             <div className="flex items-center gap-4 text-[9px] text-zinc-600 font-bold uppercase tracking-widest overflow-hidden">
+                 <span className="whitespace-nowrap hover:text-gold-500 transition-colors">[SPACE] REVEAL</span>
+                 <span className="whitespace-nowrap hover:text-gold-500 transition-colors hidden sm:inline">[ENTER] AWARD</span>
+                 <span className="whitespace-nowrap hover:text-gold-500 transition-colors hidden md:inline">[ESC] VOID</span>
+                 <span className="whitespace-nowrap hover:text-gold-500 transition-colors hidden lg:inline">[BKSP] BACK</span>
+                 <span className="whitespace-nowrap hover:text-gold-500 transition-colors hidden xl:inline">[ARROWS] PLAYER</span>
+             </div>
+
+             {/* Live Feed */}
+             <div className="flex items-center gap-3 pl-4 border-l border-zinc-800">
+                <div className="flex items-center gap-1.5">
+                   <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]" />
+                   <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest hidden sm:inline">LIVE FEED</span>
+                </div>
+                <div key={gameState.activityLog[0]} className="text-[10px] font-mono text-gold-400 font-bold uppercase tracking-wide animate-in slide-in-from-right fade-in duration-300 min-w-[100px] text-right">
+                   {gameState.activityLog[0] || "STUDIO READY"}
+                </div>
+             </div>
           </div>
         </div>
 
