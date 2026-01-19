@@ -1,3 +1,4 @@
+
 export enum QuestionState {
   AVAILABLE = 'AVAILABLE',
   ACTIVE = 'ACTIVE',     // Currently displayed
@@ -40,6 +41,7 @@ export interface Player {
 
 export interface GameState {
   isActive: boolean;
+  gameTitle: string; // NEW: Live editable title
   templateId: string | null;
   categories: Category[];
   players: Player[];

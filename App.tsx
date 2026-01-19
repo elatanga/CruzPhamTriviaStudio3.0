@@ -5,7 +5,7 @@ import {
 import { StorageService } from './services/storageService';
 import { generateTriviaContent } from './services/geminiService';
 import { logger } from './services/loggerService';
-import { soundService } from './services/soundService'; // NEW
+import { soundService } from './services/soundService'; 
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider, useToast } from './context/ToastContext';
 
@@ -46,6 +46,243 @@ const Button: React.FC<{
   return <button onClick={onClick} className={`${base} ${styles[variant]} ${className}`} disabled={disabled}>{children}</button>;
 };
 
+// --- DIRECTOR PANEL COMPONENT ---
+const DirectorPanel: React.FC<{
+  gameState: GameState;
+  setGameState: React.Dispatch<React.SetStateAction<GameState>>;
+  onClose: () => void;
+  openDetached: () => void;
+}> = ({ gameState, setGameState, onClose, openDetached }) => {
+  const [tab, setTab] = useState<'GAME' | 'PLAYERS' | 'QUESTIONS' | 'LOG'>('GAME');
+  const [editingQuestion, setEditingQuestion] = useState<{cIndex: number, qIndex: number} | null>(null);
+
+  const updateLog = (action: string) => {
+    return [action, ...gameState.activityLog].slice(0, 15);
+  };
+
+  const updateTitle = (newTitle: string) => {
+    setGameState(prev => ({
+      ...prev,
+      gameTitle: newTitle,
+      activityLog: updateLog(`TITLE CHANGED: ${newTitle}`)
+    }));
+  };
+
+  const updatePlayer = (idx: number, updates: Partial<Player>) => {
+    setGameState(prev => {
+      const ps = [...prev.players];
+      ps[idx] = { ...ps[idx], ...updates };
+      return { ...prev, players: ps, activityLog: updates.score !== undefined ? updateLog(`${ps[idx].name} SCORE: ${updates.score}`) : prev.activityLog };
+    });
+  };
+
+  const updateQuestion = (cIndex: number, qIndex: number, updates: Partial<Question>) => {
+    setGameState(prev => {
+      const cats = [...prev.categories];
+      cats[cIndex].questions[qIndex] = { ...cats[cIndex].questions[qIndex], ...updates };
+      return { ...prev, categories: cats, activityLog: updateLog(`Q EDITED: ${cats[cIndex].name} $${cats[cIndex].questions[qIndex].points}`) };
+    });
+  };
+
+  const forceResolve = (action: 'AWARD' | 'VOID' | 'RETURN') => {
+    if (!gameState.currentQuestion) return;
+    // We can reuse the logic from the main app, but for now we dispatch a custom event or let the main app handle it.
+    // However, since we have setGameState, we can manipulate directly.
+    // For safety, let's just use the same logic as the main game loop, but implemented here for direct control.
+    const { categoryId, questionId } = gameState.currentQuestion;
+    setGameState(prev => {
+       const cats = prev.categories.map(c => 
+         c.id === categoryId ? { 
+           ...c, 
+           questions: c.questions.map(q => {
+             if (q.id === questionId) {
+               if (action === 'AWARD') return { ...q, state: QuestionState.AWARDED };
+               if (action === 'VOID') return { ...q, state: QuestionState.VOIDED };
+               return { ...q, state: QuestionState.AVAILABLE };
+             }
+             return q;
+           }) 
+         } : c
+       );
+       
+       let newPlayers = prev.players;
+       if (action === 'AWARD') {
+          // Find points
+          const q = prev.categories.find(c => c.id === categoryId)?.questions.find(q => q.id === questionId);
+          if (q) {
+             const points = q.isDoubleOrNothing ? q.points * 2 : q.points;
+             newPlayers = prev.players.map((p, i) => i === prev.activePlayerIndex ? { ...p, score: p.score + points, streak: p.streak + 1 } : p);
+          }
+       }
+
+       return {
+         ...prev,
+         categories: cats,
+         players: newPlayers,
+         currentQuestion: null,
+         activityLog: updateLog(`FORCE ${action}: ${categoryId}`)
+       };
+    });
+  };
+
+  return (
+    <div className="absolute top-0 right-0 bottom-0 w-80 bg-luxury-black border-l border-gold-600 shadow-2xl z-50 flex flex-col font-sans">
+      {/* Header */}
+      <div className="h-12 border-b border-gold-800 bg-luxury-panel flex items-center justify-between px-4">
+        <span className="text-gold-400 font-bold tracking-widest text-xs">DIRECTOR CONTROL</span>
+        <div className="flex gap-2">
+           <Button variant="icon" onClick={openDetached}><Icons.Detach/></Button>
+           <Button variant="icon" onClick={onClose}><Icons.Close/></Button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gold-900 bg-black">
+         {['GAME', 'PLAYERS', 'QUESTIONS', 'LOG'].map(t => (
+           <button 
+             key={t} 
+             onClick={() => setTab(t as any)}
+             className={`flex-1 py-3 text-[10px] font-bold tracking-wider hover:bg-gold-900/20 ${tab === t ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}
+           >
+             {t}
+           </button>
+         ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+         {tab === 'GAME' && (
+           <div className="space-y-6">
+              <div>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Game Title</label>
+                 <input 
+                   className="w-full bg-black border border-zinc-700 p-2 text-gold-200 text-sm focus:border-gold-500 outline-none" 
+                   value={gameState.gameTitle} 
+                   onChange={e => updateTitle(e.target.value)}
+                 />
+              </div>
+
+              <div>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Live Controls</label>
+                 <div className="grid grid-cols-2 gap-2">
+                    <Button variant="primary" disabled={!gameState.currentQuestion} onClick={() => forceResolve('AWARD')}>FORCE AWARD</Button>
+                    <Button variant="danger" disabled={!gameState.currentQuestion} onClick={() => forceResolve('VOID')}>FORCE VOID</Button>
+                    <Button variant="secondary" disabled={!gameState.currentQuestion} onClick={() => setGameState(p => ({...p, currentQuestion: null}))}>FORCE CLOSE</Button>
+                    <Button variant="secondary" onClick={() => setGameState(p => ({...p, timer: 0, isTimerRunning: false}))}>STOP TIMER</Button>
+                 </div>
+              </div>
+
+              <div>
+                 <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 block">Timer Set</label>
+                 <div className="flex gap-2">
+                    {[10, 15, 30, 60].map(sec => (
+                      <button key={sec} onClick={() => setGameState(p => ({...p, timer: sec}))} className="flex-1 bg-zinc-900 border border-zinc-700 text-gold-500 text-xs py-1 hover:bg-zinc-800">{sec}s</button>
+                    ))}
+                 </div>
+              </div>
+           </div>
+         )}
+
+         {tab === 'PLAYERS' && (
+           <div className="space-y-4">
+              {gameState.players.map((p, i) => (
+                <div key={p.id} className={`bg-zinc-900/50 p-2 border ${i === gameState.activePlayerIndex ? 'border-gold-500' : 'border-zinc-800'}`}>
+                   <div className="flex justify-between items-center mb-2">
+                      <input 
+                        className="bg-transparent text-xs font-bold text-gold-300 outline-none w-24"
+                        value={p.name}
+                        onChange={e => updatePlayer(i, { name: e.target.value })}
+                      />
+                      <button onClick={() => setGameState(pre => ({...pre, activePlayerIndex: i}))} className={`text-[9px] px-2 py-0.5 rounded ${i === gameState.activePlayerIndex ? 'bg-gold-500 text-black' : 'bg-zinc-800 text-zinc-500'}`}>
+                        {i === gameState.activePlayerIndex ? 'ACTIVE' : 'SELECT'}
+                      </button>
+                   </div>
+                   <div className="flex items-center gap-2">
+                      <button onClick={() => updatePlayer(i, { score: p.score - 100 })} className="w-6 h-6 bg-red-900/30 text-red-500 flex items-center justify-center border border-red-900">-</button>
+                      <input 
+                        type="number"
+                        className="bg-black text-center text-gold-100 w-full border border-zinc-700 h-6 text-sm"
+                        value={p.score}
+                        onChange={e => updatePlayer(i, { score: parseInt(e.target.value) || 0 })}
+                      />
+                      <button onClick={() => updatePlayer(i, { score: p.score + 100 })} className="w-6 h-6 bg-green-900/30 text-green-500 flex items-center justify-center border border-green-900">+</button>
+                   </div>
+                </div>
+              ))}
+           </div>
+         )}
+
+         {tab === 'QUESTIONS' && (
+           <div className="space-y-2">
+              {!editingQuestion ? (
+                 <div className="grid grid-cols-5 gap-1">
+                    {gameState.categories.map((c, ci) => (
+                      <div key={c.id} className="flex flex-col gap-1">
+                         {c.questions.map((q, qi) => (
+                           <button 
+                             key={q.id} 
+                             onClick={() => setEditingQuestion({cIndex: ci, qIndex: qi})}
+                             className={`h-6 text-[8px] flex items-center justify-center border ${q.state === QuestionState.VOIDED ? 'bg-red-900/50 border-red-900 text-red-500' : 'bg-zinc-900 border-zinc-700 text-zinc-400'}`}
+                           >
+                             {q.points}
+                           </button>
+                         ))}
+                      </div>
+                    ))}
+                 </div>
+              ) : (
+                <div className="bg-black border border-gold-600 p-2 space-y-2">
+                   <div className="flex justify-between text-xs text-gold-500">
+                      <span>EDIT Q</span>
+                      <button onClick={() => setEditingQuestion(null)} className="text-zinc-500">BACK</button>
+                   </div>
+                   <textarea 
+                     className="w-full bg-zinc-900 border border-zinc-700 text-xs text-zinc-300 p-1 h-16"
+                     value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].question}
+                     onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { question: e.target.value })}
+                   />
+                   <input 
+                     className="w-full bg-zinc-900 border border-zinc-700 text-xs text-green-400 p-1"
+                     value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].answer}
+                     onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { answer: e.target.value })}
+                   />
+                   <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[9px] text-zinc-500">POINTS</label>
+                        <input 
+                          type="number" className="w-12 bg-black border border-zinc-700 text-xs text-gold-300 px-1"
+                          value={gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].points}
+                          onChange={e => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { points: parseInt(e.target.value) })}
+                        />
+                      </div>
+                      <button 
+                        onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { isDoubleOrNothing: !gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].isDoubleOrNothing })}
+                        className={`text-[9px] px-2 py-1 border ${gameState.categories[editingQuestion.cIndex].questions[editingQuestion.qIndex].isDoubleOrNothing ? 'border-red-500 text-red-500' : 'border-zinc-700 text-zinc-700'}`}
+                      >
+                        DOUBLE OR NOTHING
+                      </button>
+                   </div>
+                   <div className="flex gap-2 mt-2">
+                      <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.AVAILABLE })} className="flex-1 bg-green-900/30 text-green-500 text-[9px] border border-green-900 py-1">RESTORE</button>
+                      <button onClick={() => updateQuestion(editingQuestion.cIndex, editingQuestion.qIndex, { state: QuestionState.VOIDED })} className="flex-1 bg-red-900/30 text-red-500 text-[9px] border border-red-900 py-1">VOID</button>
+                   </div>
+                </div>
+              )}
+           </div>
+         )}
+
+         {tab === 'LOG' && (
+           <div className="space-y-1">
+              {gameState.activityLog.map((l, i) => (
+                <div key={i} className="text-[9px] font-mono text-zinc-500 border-b border-zinc-900/50 py-1 break-words">{l}</div>
+              ))}
+           </div>
+         )}
+      </div>
+    </div>
+  );
+};
+
 // --- Internal App Logic ---
 
 function CruzPhamTriviaApp() {
@@ -65,6 +302,7 @@ function CruzPhamTriviaApp() {
   // Game State
   const [gameState, setGameState] = useState<GameState>({
     isActive: false,
+    gameTitle: "",
     templateId: null,
     categories: [],
     players: Array(8).fill(null).map((_, i) => ({ id: i, name: `PLAYER ${i + 1}`, score: 0, streak: 0 })),
@@ -97,20 +335,31 @@ function CruzPhamTriviaApp() {
   useEffect(() => {
     broadcastRef.current = new BroadcastChannel('cruzpham_game_state');
     
-    // Listen for updates from other windows
+    // Check if we are a detached director
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'director') {
+      showToast("Director Mode Active - Waiting for Sync...", 'info');
+      // We don't force view change yet, we wait for state sync
+    }
+
     broadcastRef.current.onmessage = (event) => {
       if (event.data.type === 'STATE_UPDATE') {
-        // Only update if we are not the source (prevent loops if needed, though simpler here)
-        // If we are in "Director Mode" in another window, we receive game state.
-        // Actually, simpler: All windows sync state.
         isBroadcastingRef.current = true;
         setGameState(event.data.payload);
+        // If we receive active game state and we are in LOGIN, jump to GAME
+        if (event.data.payload.isActive && view !== 'GAME') {
+             setView('GAME');
+             // Auto-open director panel if detached
+             if (params.get('mode') === 'director') {
+               setGameState(p => ({...p, directorMode: true}));
+             }
+        }
         isBroadcastingRef.current = false;
       }
     };
 
     return () => broadcastRef.current?.close();
-  }, []);
+  }, [view]);
 
   // Broadcast state changes
   useEffect(() => {
@@ -224,6 +473,7 @@ function CruzPhamTriviaApp() {
     setGameState(prev => ({
       ...prev,
       isActive: true,
+      gameTitle: template.name.toUpperCase(),
       templateId: template.id,
       categories: gameCategories,
       currentQuestion: null,
@@ -317,7 +567,7 @@ function CruzPhamTriviaApp() {
         return p;
       });
 
-      return { ...prev, categories: cats, players, currentQuestion: null, activityLog: [log, ...prev.activityLog].slice(0, 8) };
+      return { ...prev, categories: cats, players, currentQuestion: null, activityLog: [log, ...prev.activityLog].slice(0, 15) };
     });
   }, [gameState.currentQuestion]);
 
@@ -415,10 +665,9 @@ function CruzPhamTriviaApp() {
   };
 
   const openDetachedDirector = () => {
-    const url = window.location.href; // Opens same app
-    // In a real scenario, we might add ?mode=director to URL to force a specific view,
-    // but here we just rely on the BroadcastChannel to sync the same view state.
-    window.open(url, '_blank', 'width=400,height=800');
+    const url = new URL(window.location.href);
+    url.searchParams.set('mode', 'director');
+    window.open(url.toString(), '_blank', 'width=400,height=800');
     showToast("Director Panel Detached", 'info');
   };
 
@@ -477,7 +726,9 @@ function CruzPhamTriviaApp() {
   const Header = () => (
     <header className="h-[6vh] min-h-[40px] flex items-center justify-between px-4 bg-gradient-to-r from-luxury-black to-luxury-dark border-b border-gold-900/50 shrink-0 z-30">
       <div className="flex items-center gap-4">
-        <span className="font-serif font-bold text-lg text-gold-400 tracking-widest">CRUZPHAM</span>
+        <span className="font-serif font-bold text-lg text-gold-400 tracking-widest truncate max-w-[200px] md:max-w-none">
+          {gameState.isActive && gameState.gameTitle ? gameState.gameTitle : 'CRUZPHAM'}
+        </span>
         {gameState.isActive && (
           <div className="flex items-center gap-2 bg-black/40 px-3 py-1 rounded border border-gold-900/30">
              <span className={`font-mono text-xl leading-none ${gameState.timer < 5 && gameState.isTimerRunning ? 'text-red-500 animate-ping' : 'text-gold-200'}`}>{gameState.timer < 10 ? `0${gameState.timer}` : gameState.timer}</span>
@@ -498,7 +749,7 @@ function CruzPhamTriviaApp() {
         ) : (
           <>
              <span className="text-green-600 animate-pulse">● LIVE</span>
-             <button onClick={openDetachedDirector} className="text-gold-500 hover:text-white transition-colors flex items-center gap-1"><Icons.Detach/> DIRECTOR</button>
+             <button onClick={() => setGameState(p => ({...p, directorMode: true}))} className="text-gold-500 hover:text-white transition-colors flex items-center gap-1"><Icons.Edit/> DIRECTOR</button>
              <button onClick={() => {setView('DASHBOARD'); soundService.playClick();}} className="text-gold-500 hover:text-white transition-colors">END GAME</button>
           </>
         )}
@@ -690,7 +941,7 @@ function CruzPhamTriviaApp() {
                  relative flex flex-col items-center justify-center rounded border bg-luxury-panel transition-all duration-300
                  ${i === gameState.activePlayerIndex ? 'border-gold-500 shadow-glow bg-gradient-to-b from-luxury-panel to-gold-900/20' : 'border-zinc-800 opacity-80'}
               `}>
-                 <div className="text-[9px] lg:text-xs text-zinc-500 tracking-wider uppercase mb-1 font-bold">{p.name}</div>
+                 <div className="text-[9px] lg:text-xs text-zinc-500 tracking-wider uppercase mb-1 font-bold truncate w-full text-center px-1">{p.name}</div>
                  <div className={`font-serif font-bold text-responsive-lg leading-none ${p.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{p.score}</div>
                  {i === gameState.activePlayerIndex && <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse shadow-glow"/>}
                  
@@ -731,18 +982,15 @@ function CruzPhamTriviaApp() {
 
         {/* --- OVERLAYS --- */}
 
-        {/* DIRECTOR PANEL */}
-        <div className={`absolute top-12 right-0 bottom-0 w-64 bg-luxury-black/95 border-l border-gold-800 shadow-2xl z-40 transform transition-transform duration-300 flex flex-col ${gameState.directorMode ? 'translate-x-0' : 'translate-x-60'}`}>
-          <button onClick={() => {setGameState(p => ({...p, directorMode: !p.directorMode})); soundService.playClick();}} className="absolute -left-8 top-1/2 w-8 h-16 bg-gold-700 rounded-l flex items-center justify-center hover:w-10 transition-all text-black font-bold vertical-rl writing-mode-vertical">
-             {gameState.directorMode ? <Icons.ChevronRight/> : <Icons.ChevronLeft/>}
-          </button>
-          <div className="p-4 border-b border-gold-900">
-             <h3 className="font-serif text-gold-500">DIRECTOR</h3>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-             {gameState.activityLog.map((l, i) => <div key={i} className="text-[10px] font-mono text-zinc-500 border-b border-zinc-900 py-1">{l}</div>)}
-          </div>
-        </div>
+        {/* DIRECTOR PANEL (Replaces the old side drawer) */}
+        {gameState.directorMode && (
+           <DirectorPanel 
+             gameState={gameState} 
+             setGameState={setGameState} 
+             onClose={() => setGameState(p => ({...p, directorMode: false}))}
+             openDetached={openDetachedDirector}
+           />
+        )}
 
         {/* ACTIVE QUESTION OVERLAY */}
         {gameState.currentQuestion && (() => {
@@ -750,7 +998,7 @@ function CruzPhamTriviaApp() {
            const q = cat?.questions.find(q => q.id === gameState.currentQuestion!.questionId);
            if (!q) return null;
            return (
-             <div className="absolute inset-0 z-50 bg-luxury-glass backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+             <div className="absolute inset-0 z-40 bg-luxury-glass backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
                 <div className="w-full max-w-5xl aspect-video bg-black border-2 border-gold-600 shadow-glow-strong rounded-lg flex flex-col overflow-hidden relative">
                    {/* Card Header */}
                    <div className="h-16 flex items-center justify-between px-8 bg-gradient-to-r from-gold-900/20 to-transparent border-b border-gold-900/50">
