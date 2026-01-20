@@ -155,6 +155,12 @@ export const StorageService = {
     const cleanUsername = normalizeUsername(username);
     const cleanToken = normalizeToken(token);
     
+    logger.info('AUTH_ATTEMPT_START', { 
+      correlationId: cid, 
+      usernameNormalized: cleanUsername, 
+      tokenLength: token.length 
+    });
+    
     if (!checkRateLimit(`login_${cleanUsername}`)) {
       return { success: false, error: "Too many attempts. Please wait." };
     }
@@ -206,10 +212,20 @@ export const StorageService = {
       // Filter valid tokens for this user
       const userTokens = allTokens.filter(t => t.userId === user.id && !t.revokedAt);
       
+      logger.debug('AUTH_TOKEN_LOOKUP', { 
+        correlationId: cid, 
+        userId: user.id, 
+        tokensFound: userTokens.length 
+      });
+
       let validToken: AuthToken | null = null;
       
       for (const t of userTokens) {
-        if (t.expiresAt && Date.now() > t.expiresAt) continue;
+        if (t.expiresAt && Date.now() > t.expiresAt) {
+           logger.debug('AUTH_TOKEN_EXPIRED', { correlationId: cid, tokenId: t.id, expiresAt: t.expiresAt });
+           continue;
+        }
+
         const attemptHash = await hashPassword(cleanToken, t.salt);
         if (attemptHash === t.tokenHash) {
           validToken = t;
@@ -245,7 +261,11 @@ export const StorageService = {
         logger.setContext(session.sessionId, user.username);
         return { success: true, session, isAdmin: false };
       } else {
-        logger.warn('AUTH_INVALID_TOKEN', { username: cleanUsername }, cid);
+        logger.warn('AUTH_INVALID_CREDENTIALS', { 
+          correlationId: cid, 
+          username: cleanUsername, 
+          reason: 'NO_MATCHING_HASH' 
+        });
         return { success: false, error: "Invalid or expired token." };
       }
     }
@@ -498,8 +518,12 @@ export const StorageService = {
 
   adminIssueToken: async (adminId: string, userId: string, expiryDurationMs: number | null): Promise<string> => {
     const salt = generateSalt();
-    const token = generateSecureToken(); // Raw hex token
-    const hash = await hashPassword(token, salt);
+    const token = generateSecureToken(); // Valid hex string
+    
+    // Enforce normalization on issuance to match login logic
+    const normalizedRaw = normalizeToken(token);
+    const hash = await hashPassword(normalizedRaw, salt);
+    
     const newToken: AuthToken = {
       id: crypto.randomUUID(),
       userId,
@@ -511,10 +535,13 @@ export const StorageService = {
       lastUsedAt: null,
       rotationCount: 0
     };
+    
     const tokens = getDB<AuthToken>(KEYS.TOKENS);
     saveDB(KEYS.TOKENS, [...tokens, newToken]);
+    
     StorageService.logAudit(adminId, 'ISSUE_TOKEN', userId, newToken.id, { expiry: expiryDurationMs });
-    return token;
+    
+    return token; 
   },
 
   adminRevokeToken: (adminId: string, tokenId: string) => {

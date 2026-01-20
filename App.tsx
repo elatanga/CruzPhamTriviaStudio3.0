@@ -96,12 +96,6 @@ const BrandFooter: React.FC<{ className?: string }> = ({ className = "" }) => (
   </div>
 );
 
-/**
- * ContentFrame: The central layout wrapper for all views.
- * Modes:
- * - default: Centered card-like content (Login, Selectors).
- * - full: Full width/height usage with internal scrolling (Dashboard, Game).
- */
 const ContentFrame: React.FC<{ children: React.ReactNode; className?: string; fullWidth?: boolean }> = ({ children, className = "", fullWidth = false }) => {
   return (
     <div className={`w-full h-full flex flex-col relative overflow-hidden ${!fullWidth ? 'items-center justify-center p-4' : ''} ${className}`}>
@@ -124,7 +118,7 @@ const AppShell: React.FC<{ children: React.ReactNode; className?: string; noHead
             <div className="bg-gradient-to-r from-luxury-black via-zinc-900 to-luxury-black border-b border-gold-900/50 py-1 px-4 flex items-center justify-between">
                <span className="text-[10px] text-gold-300 font-bold tracking-widest uppercase">{UI_TEXT.production.currentPrefix}{activeShowName}</span>
                {onSwitchShow && (
-                 <button onClick={onSwitchShow} className="text-[9px] text-zinc-500 hover:text-gold-400 font-bold uppercase tracking-wider underline">
+                 <button onClick={onSwitchShow} className="text-[9px] text-zinc-500 hover:text-gold-400 font-bold uppercase tracking-wider underline cursor-pointer pointer-events-auto">
                    {UI_TEXT.production.switch}
                  </button>
                )}
@@ -140,7 +134,6 @@ const AppShell: React.FC<{ children: React.ReactNode; className?: string; noHead
   );
 };
 
-// --- PRODUCTION SELECTOR COMPONENT ---
 const ProductionSelector: React.FC<{ userId: string; onSelect: (prod: Production) => void }> = ({ userId, onSelect }) => {
   const [productions, setProductions] = useState<Production[]>([]);
   const [mode, setMode] = useState<'SELECT' | 'CREATE'>('SELECT');
@@ -206,8 +199,6 @@ const ProductionSelector: React.FC<{ userId: string; onSelect: (prod: Production
   );
 };
 
-// --- OVERLAYS ---
-
 const QuestionDisplay: React.FC<{
   gameState: GameState;
   currentQuestion: { categoryId: string; questionId: string };
@@ -232,32 +223,26 @@ const QuestionDisplay: React.FC<{
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
         if (q?.state === QuestionState.REVEALED) {
-            // 'S' Key -> Toggle Steal
             if (e.key.toLowerCase() === 's' && !isStealing) {
                 e.preventDefault();
                 e.stopPropagation();
                 setIsStealing(true);
             }
-            
-            // Steal Mode Controls
             if (isStealing) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
-                    e.stopPropagation(); // Stop Global Award
-                    if (stealTarget !== null) {
-                        handleConfirmSteal();
-                    }
+                    e.stopPropagation();
+                    if (stealTarget !== null) handleConfirmSteal();
                 }
                 if (e.key === 'Escape') {
                     e.preventDefault();
-                    e.stopPropagation(); // Stop Global Void
+                    e.stopPropagation();
                     setIsStealing(false);
                     setStealTarget(null);
                 }
             }
         }
     };
-    // Capture to intercept before Global Handlers
     window.addEventListener('keydown', handler, { capture: true });
     return () => window.removeEventListener('keydown', handler, { capture: true });
   }, [q?.state, isStealing, stealTarget]);
@@ -278,8 +263,6 @@ const QuestionDisplay: React.FC<{
   return (
     <div className="absolute inset-0 z-40 bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-8 animate-in fade-in duration-300">
        <div className="max-w-5xl w-full text-center space-y-8 relative">
-          
-          {/* Header */}
           <div className="flex flex-col items-center gap-2 border-b border-gold-900/50 pb-6 mb-8">
              <div className="text-gold-600 font-bold tracking-[0.5em] text-xl uppercase">
                 {cat?.name} • {q.points}
@@ -298,12 +281,10 @@ const QuestionDisplay: React.FC<{
              )}
           </div>
           
-          {/* Question Text */}
           <div className="font-serif text-3xl md:text-5xl lg:text-6xl text-gold-100 leading-tight drop-shadow-2xl px-4 py-8">
              {q.question}
           </div>
 
-          {/* Answer Section */}
           <div className="min-h-[120px] flex items-center justify-center">
             {isRevealed ? (
                <div className="w-full pt-8 border-t border-gold-500/30 animate-in slide-in-from-bottom-4 fade-in duration-500">
@@ -317,7 +298,6 @@ const QuestionDisplay: React.FC<{
             )}
           </div>
 
-          {/* Controls */}
           <div className="mt-12 flex justify-center gap-4">
              {!isRevealed ? (
                 <Button onClick={onReveal} variant="primary" className="w-48 py-4 text-lg shadow-[0_0_20px_rgba(212,175,55,0.2)]">
@@ -380,7 +360,7 @@ const QuestionDisplay: React.FC<{
        </div>
     </div>
   );
-}
+};
 
 const DebugOverlay: React.FC<{ gameState: GameState }> = ({ gameState }) => {
   const [visible, setVisible] = useState(false);
@@ -400,7 +380,7 @@ const DebugOverlay: React.FC<{ gameState: GameState }> = ({ gameState }) => {
        <div>EVENT: {gameState.eventName}</div>
     </div>
   );
-}
+};
 
 const OnboardingModal: React.FC<{ onSave: (name: string) => void; onSkip: () => void }> = ({ onSave, onSkip }) => {
   const [input, setInput] = useState('');
@@ -419,7 +399,6 @@ const OnboardingModal: React.FC<{ onSave: (name: string) => void; onSkip: () => 
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gold-400 to-transparent animate-pulse"></div>
         <h2 className="text-2xl font-serif font-bold text-gold-100 mb-2 tracking-widest">{UI_TEXT.onboarding.welcome}</h2>
         <p className="text-zinc-500 text-xs mb-8 uppercase tracking-widest">{UI_TEXT.brand.studioName}</p>
-        
         <div className="w-full space-y-4 mb-8">
           <label className="block text-left text-[10px] text-gold-600 font-bold tracking-widest uppercase ml-1">{UI_TEXT.onboarding.prompt}</label>
           <Input 
@@ -432,7 +411,6 @@ const OnboardingModal: React.FC<{ onSave: (name: string) => void; onSkip: () => 
           />
           {error && <p className="text-red-500 text-[10px] tracking-wide animate-pulse">{error}</p>}
         </div>
-
         <div className="flex gap-4 w-full">
           <Button variant="ghost" className="flex-1" onClick={onSkip}>{UI_TEXT.onboarding.skip}</Button>
           <Button variant="primary" className="flex-1 py-3" onClick={handleSave}>{UI_TEXT.onboarding.continue}</Button>
@@ -624,7 +602,16 @@ const AdminDashboard: React.FC<{ session: Session; logout: () => void; onSwitchT
   const handleIssueToken = async (userId: string, username: string, expiry: number | null) => { const token = await StorageService.adminIssueToken(session.userId, userId, expiry); setCredentialModal({ isOpen: true, username: username, token: token, userId: userId }); setUserTokens(StorageService.getTokens(userId)); refreshData(); };
   const handleStatusChange = (userId: string, status: UserStatus) => { StorageService.adminSetUserStatus(session.userId, userId, status); refreshData(); showToast(`User ${status.toLowerCase()}`, 'info'); };
   const handleShare = async () => { if (!credentialModal) return; setIsSending(true); try { if (shareMode === 'EMAIL') await CommunicationService.sendLoginEmail(session.userId, credentialModal.userId, shareInput, credentialModal.username, credentialModal.token); else if (shareMode === 'SMS') await CommunicationService.sendLoginSms(session.userId, credentialModal.userId, shareInput, credentialModal.username, credentialModal.token); showToast(UI_TEXT.admin.credentials.sentSuccess, 'success'); setShareMode('NONE'); setShareInput(''); } catch (e) { showToast('Error', 'error'); } finally { setIsSending(false); } };
-  const handleCopy = () => { if (!credentialModal) return; navigator.clipboard.writeText(CommunicationService.getShareMessage(credentialModal.username, credentialModal.token)); setIsCopied(true); showToast('Copied', 'success'); setShareMode('NONE'); setTimeout(() => setIsCopied(false), 2000); };
+  
+  // FIX: Copy raw token to clipboard, NOT the formatted message, to prevent user error
+  const handleCopy = () => { 
+      if (!credentialModal) return; 
+      navigator.clipboard.writeText(credentialModal.token); 
+      setIsCopied(true); 
+      showToast('Token Copied', 'success'); 
+      setShareMode('NONE'); 
+      setTimeout(() => setIsCopied(false), 2000); 
+  };
 
   const filteredUsers = users.filter(u => u.username.includes(searchTerm.toLowerCase()));
   const filteredRequests = requests.filter(r => (r.tiktokHandle.toLowerCase().includes(searchTerm.toLowerCase()) || r.preferredUsername.toLowerCase().includes(searchTerm.toLowerCase())) && (reqFilter === 'ALL' || r.status === reqFilter));
@@ -773,7 +760,7 @@ const AdminDashboard: React.FC<{ session: Session; logout: () => void; onSwitchT
       )}
     </AppShell>
   );
-}
+};
 
 const DirectorPlaceholder: React.FC<{ onBringBack: () => void; className?: string }> = ({ onBringBack, className = "" }) => (
   <Card className={`border-l border-gold-900/50 flex flex-col items-center justify-center p-8 text-center gap-6 bg-luxury-black ${className}`}>
@@ -984,6 +971,7 @@ function CruzPhamTriviaApp() {
   // Event State
   const [eventName, setEventName] = useState<string>("");
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // Game State
   const [gameState, setGameState] = useState<GameState>({
@@ -1173,6 +1161,41 @@ function CruzPhamTriviaApp() {
     showToast("Director controls restored.", 'success');
   };
 
+  const handleExitClick = () => {
+    logger.info('exitEventClicked');
+    setShowExitConfirm(true);
+  };
+
+  const confirmExit = () => {
+    try {
+        if (isDirectorPoppedOut) {
+            handleBringBack();
+        }
+        setGameState(prev => ({ ...prev, isActive: false, currentQuestion: null, currentQuestionState: null }));
+        setView('DASHBOARD');
+        setShowExitConfirm(false);
+        showToast("Event Exited", 'info');
+    } catch (e) {
+        logger.error('exitEventFailed', e as Error);
+        showToast("Exit failed. Try again.", 'error');
+    }
+  };
+
+  const handleSwitchShowClick = () => {
+    logger.info('switchShowClicked');
+    if (gameState.currentQuestionState === QuestionState.ACTIVE || gameState.currentQuestionState === QuestionState.REVEALED) {
+        showToast("Close the current question before switching shows.", 'warning');
+        return;
+    }
+    
+    try {
+        setView('PRODUCTION_SELECT');
+    } catch (e) {
+        logger.error('switchShowFailed', e as Error);
+        showToast("Couldn't switch shows. Try again.", 'error');
+    }
+  };
+
   const handleSelectQuestion = (catId: string, qId: string) => { 
     setGameState(prev => { 
         const cat = prev.categories.find(c => c.id === catId); 
@@ -1359,7 +1382,7 @@ function CruzPhamTriviaApp() {
       )}
 
       {view === 'GAME' && (
-        <AppShell activeShowName={activeProduction?.name} onSwitchShow={handleSwitchShow} noFooter>
+        <AppShell activeShowName={activeProduction?.name} onSwitchShow={handleSwitchShowClick} noFooter>
            <div className="flex flex-col h-full w-full bg-black">
                 {/* MAIN CONTENT AREA */}
                 <div className="flex-1 relative overflow-hidden">
@@ -1429,8 +1452,8 @@ function CruzPhamTriviaApp() {
                     </button>
                     
                     <button 
-                        onClick={() => setView('DASHBOARD')} 
-                        className="absolute right-6 text-[10px] text-zinc-600 hover:text-red-500 tracking-widest flex items-center gap-1"
+                        onClick={handleExitClick} 
+                        className="absolute right-6 text-[10px] text-zinc-600 hover:text-red-500 tracking-widest flex items-center gap-1 cursor-pointer pointer-events-auto"
                     >
                         <Icons.Close /> EXIT EVENT
                     </button>
@@ -1438,6 +1461,19 @@ function CruzPhamTriviaApp() {
            </div>
            
            <DebugOverlay gameState={gameState} />
+
+           {showExitConfirm && (
+                <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-in fade-in">
+                    <Card className="w-full max-w-sm p-6 border-red-900/50 bg-zinc-900 text-center shadow-2xl">
+                        <h3 className="text-xl font-serif text-white mb-2 tracking-widest">EXIT EVENT?</h3>
+                        <p className="text-zinc-400 text-xs mb-6 font-sans">The game will stop. Your session will remain active.</p>
+                        <div className="flex gap-4">
+                            <Button variant="ghost" onClick={() => setShowExitConfirm(false)} className="flex-1">CANCEL</Button>
+                            <Button variant="danger" onClick={confirmExit} className="flex-1">EXIT EVENT</Button>
+                        </div>
+                    </Card>
+                </div>
+            )}
         </AppShell>
       )}
 
