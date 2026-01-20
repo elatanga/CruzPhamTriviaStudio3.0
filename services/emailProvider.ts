@@ -30,8 +30,9 @@ export const EmailProvider = {
     logger.info('EMAIL_PROVIDER_REQUEST', { 
       provider: PROVIDER_CONFIG.name, 
       recipientCount: payload.to.length,
-      subject: payload.subject
-    }, correlationId);
+      subject: payload.subject,
+      correlationId
+    });
 
     try {
       // 1. Simulate API Key check (Internal Logic)
@@ -48,7 +49,7 @@ export const EmailProvider = {
 
       if (isSuccess) {
         const messageId = `msg_${crypto.randomUUID()}`;
-        logger.info('EMAIL_PROVIDER_SUCCESS', { messageId }, correlationId);
+        logger.info('EMAIL_PROVIDER_SUCCESS', { messageId, correlationId });
         
         // Log the actual content for "Delivery" verification in console
         console.group(`%c[${PROVIDER_CONFIG.name}] EMAIL DELIVERED`, 'color: #4CAF50; font-weight: bold; border: 1px solid #4CAF50; padding: 4px;');
@@ -64,7 +65,7 @@ export const EmailProvider = {
       }
 
     } catch (error) {
-      logger.error('EMAIL_PROVIDER_FAILURE', error as Error, { provider: PROVIDER_CONFIG.name }, correlationId);
+      logger.error('EMAIL_PROVIDER_FAILURE', error as Error, { provider: PROVIDER_CONFIG.name, correlationId });
       return { success: false, error: (error as Error).message };
     }
   },

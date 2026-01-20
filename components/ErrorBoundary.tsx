@@ -1,5 +1,5 @@
-import React, { Component, ErrorInfo, ReactNode } from "react";
-import { logger } from "../services/loggerService";
+
+import React, { ErrorInfo, ReactNode } from "react";
 
 interface Props {
   children?: ReactNode;
@@ -10,33 +10,28 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  // Fix: Explicitly declare state property to satisfy strict TypeScript checks
+export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
   };
-
-  // Fix: Explicitly declare props to satisfy TS compiler when inheritance inference fails
-  public declare props: Readonly<Props>;
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    logger.error('RENDER_FAILURE', error, { componentStack: errorInfo.componentStack });
+    console.error("Uncaught error:", error, errorInfo);
   }
 
   public render() {
-    // Fix: Access state safely
     if (this.state.hasError) {
       return (
         <div className="h-screen w-screen bg-black flex flex-col items-center justify-center p-8 text-center border-4 border-red-900/50">
           <div className="max-w-md p-8 bg-zinc-900 border border-gold-600 rounded shadow-[0_0_50px_rgba(255,0,0,0.2)]">
-            <h1 className="text-3xl font-serif text-gold-500 mb-4 tracking-widest">SYSTEM INTERRUPTION</h1>
+            <h1 className="text-3xl font-serif text-gold-500 mb-4 tracking-widest uppercase">System Interruption</h1>
             <p className="text-zinc-400 text-sm mb-6 font-sans">
-              The studio has encountered a critical anomaly. Our engineers have been notified.
+              The application encountered a critical anomaly.
             </p>
             <div className="bg-black p-4 border border-zinc-800 text-left mb-6 overflow-auto max-h-32">
               <code className="text-red-500 font-mono text-xs">
@@ -45,16 +40,15 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
             <button
               onClick={() => window.location.reload()}
-              className="px-6 py-3 bg-gold-600 text-black font-bold uppercase tracking-wider hover:bg-gold-500 transition-colors w-full"
+              className="px-6 py-3 bg-gold-600 text-black font-bold uppercase tracking-wider hover:bg-gold-500 transition-colors"
             >
-              Reinitialize System
+              REINITIALIZE SYSTEM
             </button>
           </div>
         </div>
       );
     }
 
-    // Fix: Access props correctly from Component inheritance
     return this.props.children;
   }
 }
