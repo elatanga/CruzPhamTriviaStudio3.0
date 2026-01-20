@@ -4,10 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>CruzPham Trivia</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-    
-    <!-- TAILWIND CDN HOTFIX -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
@@ -18,7 +16,7 @@
                 200: '#F4E6BF',
                 300: '#DDB856',
                 400: '#C69C2E',
-                500: '#B48811',
+                500: '#B48811', // Darker Gold Base
                 600: '#8A6605',
                 700: '#604600',
                 800: '#3D2C00',
@@ -54,50 +52,54 @@
         },
       }
     </script>
-    <style type="text/tailwindcss">
-      @layer base {
-        body {
-          background-color: #050505;
-          color: #DDB856;
-          overflow: hidden;
-          height: 100vh;
-          height: 100dvh;
-          width: 100vw;
-        }
+    <style>
+      body {
+        background-color: #050505;
+        color: #DDB856;
+        overflow: hidden; /* ABSOLUTE UI RULE: NO SCROLLING */
+        height: 100vh; /* Fallback */
+        height: 100dvh; /* Dynamic Viewport Height */
+        width: 100vw;
       }
+      /* Safe Area Utilities */
+      .pt-safe { padding-top: env(safe-area-inset-top); }
+      .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+      .pl-safe { padding-left: env(safe-area-inset-left); }
+      .pr-safe { padding-right: env(safe-area-inset-right); }
+      
+      .h-safe-screen { height: 100dvh; }
 
-      @layer utilities {
-        .pt-safe { padding-top: env(safe-area-inset-top); }
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-        .pl-safe { padding-left: env(safe-area-inset-left); }
-        .pr-safe { padding-right: env(safe-area-inset-right); }
-        
-        .h-safe-screen { height: 100dvh; }
+      /* Custom Scrollbar for internal panels */
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: #111; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #8A6605; border-radius: 2px; }
 
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #111; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #8A6605; border-radius: 2px; }
-
-        .text-responsive-xs { font-size: clamp(8px, 1vh, 12px); }
-        .text-responsive-base { font-size: clamp(10px, 1.5vh, 16px); }
-        .text-responsive-lg { font-size: clamp(14px, 2.5vh, 24px); }
-        .text-responsive-xl { font-size: clamp(18px, 3.5vh, 32px); }
-        .text-responsive-hero { font-size: clamp(20px, 5vh, 60px); }
-      }
+      /* Text clamp utility for responsiveness */
+      .text-responsive-xs { font-size: clamp(8px, 1vh, 12px); }
+      .text-responsive-base { font-size: clamp(10px, 1.5vh, 16px); }
+      .text-responsive-lg { font-size: clamp(14px, 2.5vh, 24px); }
+      .text-responsive-xl { font-size: clamp(18px, 3.5vh, 32px); }
+      .text-responsive-hero { font-size: clamp(20px, 5vh, 60px); }
     </style>
-
-    <script type="importmap">
+  <script type="importmap">
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "@google/genai": "https://esm.sh/@google/genai@^1.37.0"
+    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "path": "https://esm.sh/path@^0.12.7",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "firebase/": "https://esm.sh/firebase@^12.8.0/",
+    "zod": "https://esm.sh/zod@^4.3.5"
   }
 }
 </script>
-  </head>
+<link rel="stylesheet" href="/index.css">
+</head>
   <body>
     <div id="root" class="h-full w-full"></div>
-  </body>
+  <script type="module" src="/index.tsx"></script>
+</body>
 </html>

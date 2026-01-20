@@ -1,5 +1,5 @@
 
-import { Template, User, Session, AppError, TokenRequest } from '../types';
+import { Template, User, Session, AppError } from '../types';
 import { logger } from './loggerService';
 
 // --- CONSTANTS ---
@@ -7,8 +7,7 @@ const KEYS = {
   USERS: 'cruzphamtrivia_users_v2',
   SESSIONS: 'cruzphamtrivia_sessions_v2',
   TEMPLATES: 'cruzphamtrivia_templates_v2',
-  TICKETS: 'cruzphamtrivia_detach_tickets_v1',
-  REQUESTS: 'cruzphamtrivia_requests_v1' // NEW: Source of Truth for Requests
+  TICKETS: 'cruzphamtrivia_detach_tickets_v1' // Shared storage for tickets
 };
 
 const SESSION_TTL = 30 * 60 * 1000; 
@@ -81,10 +80,6 @@ interface DetachTicket {
 
 export const StorageService = {
   
-  // --- USER & SESSION ---
-
-  // NOTE: This is for internal/legacy registration. 
-  // Admin approval uses approveTokenRequest.
   register: async (username: string): Promise<{ success: boolean; token?: string; error?: string }> => {
     const cid = crypto.randomUUID();
     logger.info('AUTH_REGISTER_ATTEMPT', { username }, cid);
@@ -109,14 +104,10 @@ export const StorageService = {
       const passwordHash = await hashPassword(token, salt);
 
       const newUser: User = {
-        id: crypto.randomUUID(),
         username: cleanUsername,
         passwordHash,
         salt,
-        createdAt: Date.now(),
-        status: 'ACTIVE', // Default status
-        updatedAt: Date.now(),
-        lastLoginAt: null
+        createdAt: Date.now()
       };
 
       saveDB(KEYS.USERS, [...users, newUser]);
@@ -129,7 +120,6 @@ export const StorageService = {
     }
   },
 
-  // VERIFY ONLY - NEVER WRITES TO USER/TOKENS
   login: async (username: string, token: string): Promise<{ success: boolean; session?: Session; error?: string }> => {
     const cid = crypto.randomUUID();
     logger.info('AUTH_LOGIN_ATTEMPT', { username }, cid);
@@ -166,8 +156,6 @@ export const StorageService = {
 
       const newSession: Session = {
         sessionId: crypto.randomUUID(),
-        userId: user.id || 'legacy', // Handle legacy users without ID
-        userType: 'USER', // Default
         username: cleanUsername,
         userAgent: navigator.userAgent,
         createdAt: Date.now(),
@@ -185,91 +173,6 @@ export const StorageService = {
       return { success: true, session: newSession };
     } catch (e) {
       logger.error('AUTH_LOGIN_ERROR', e as Error, { username }, cid);
-      return { success: false, error: "System Error" };
-    }
-  },
-
-  // ADMIN ACTION: ISSUE TOKEN
-  approveTokenRequest: async (requestId: string): Promise<{ success: boolean; token?: string; error?: string }> => {
-    try {
-      const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-      const reqIndex = requests.findIndex(r => r.id === requestId);
-      
-      if (reqIndex === -1) return { success: false, error: "Request not found" };
-      const req = requests[reqIndex];
-      
-      // Check if already approved to prevent duplicate issuance from stale UI
-      if (req.status === 'APPROVED') return { success: false, error: "Already approved" };
-
-      const cleanUsername = req.preferredUsername.trim().toLowerCase();
-      
-      // Check collision
-      const users = getDB<User>(KEYS.USERS);
-      if (users.find(u => u.username === cleanUsername)) {
-        return { success: false, error: "Username already exists. Reject or rotate." };
-      }
-
-      // Generate Token
-      const token = generateToken();
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(token, salt);
-
-      const newUser: User = {
-        id: crypto.randomUUID(),
-        username: cleanUsername,
-        passwordHash,
-        salt,
-        createdAt: Date.now(),
-        status: 'ACTIVE',
-        updatedAt: Date.now(),
-        lastLoginAt: null
-      };
-
-      saveDB(KEYS.USERS, [...users, newUser]);
-      
-      // Update Request
-      req.status = 'APPROVED';
-      req.updatedAt = Date.now();
-      requests[reqIndex] = req;
-      saveDB(KEYS.REQUESTS, requests);
-      
-      logger.audit('ADMIN_ISSUED_TOKEN', { requestId, username: cleanUsername });
-      return { success: true, token };
-
-    } catch (e) {
-      logger.error('ADMIN_ISSUE_ERROR', e as Error);
-      return { success: false, error: "System Error" };
-    }
-  },
-
-  // ADMIN ACTION: ROTATE TOKEN
-  rotateToken: async (username: string): Promise<{ success: boolean; token?: string; error?: string }> => {
-    try {
-      const cleanUsername = username.trim().toLowerCase();
-      const users = getDB<User>(KEYS.USERS);
-      const userIndex = users.findIndex(u => u.username === cleanUsername);
-      
-      if (userIndex === -1) return { success: false, error: "User not found" };
-      
-      const token = generateToken();
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(token, salt);
-      
-      users[userIndex].passwordHash = passwordHash;
-      users[userIndex].salt = salt;
-      users[userIndex].updatedAt = Date.now();
-      
-      saveDB(KEYS.USERS, users);
-      
-      // Invalidate existing sessions
-      let sessions = getDB<Session>(KEYS.SESSIONS);
-      sessions = sessions.filter(s => s.username !== cleanUsername);
-      saveDB(KEYS.SESSIONS, sessions);
-      
-      logger.audit('ADMIN_ROTATED_TOKEN', { username: cleanUsername });
-      return { success: true, token };
-    } catch (e) {
-      logger.error('ADMIN_ROTATE_ERROR', e as Error);
       return { success: false, error: "System Error" };
     }
   },
@@ -310,32 +213,6 @@ export const StorageService = {
       logger.error('HEARTBEAT_ERROR', e as Error);
       return false;
     }
-  },
-
-  // --- TOKEN REQUESTS (DB SIMULATION) ---
-  
-  getTokenRequests: (): TokenRequest[] => {
-    return getDB<TokenRequest>(KEYS.REQUESTS);
-  },
-
-  saveTokenRequest: (request: TokenRequest): void => {
-    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-    requests.push(request);
-    saveDB(KEYS.REQUESTS, requests);
-  },
-
-  updateTokenRequest: (request: TokenRequest): void => {
-    const requests = getDB<TokenRequest>(KEYS.REQUESTS);
-    const index = requests.findIndex(r => r.id === request.id);
-    if (index !== -1) {
-      requests[index] = request;
-      saveDB(KEYS.REQUESTS, requests);
-    }
-  },
-
-  getDeviceId: (): string => {
-    // Simple fingerprinting for demo purposes
-    return bufferToHex(new TextEncoder().encode(navigator.userAgent + navigator.language));
   },
 
   // --- DETACHMENT TICKET SYSTEM ---
@@ -446,11 +323,5 @@ export const StorageService = {
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
-  },
-
-  // Audit Logs (For Local Admin)
-  logAudit: (adminId: string, action: string, targetUserId: string, targetTokenId?: string, metadata?: any) => {
-     // No-op for now in demo, but required by CommunicationService
-     logger.audit(action, { adminId, targetUserId, targetTokenId, ...metadata });
   }
 };

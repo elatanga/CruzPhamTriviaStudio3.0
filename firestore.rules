@@ -1,49 +1,31 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Default Deny
-    match /{document=**} {
-      allow read, write: if false;
+    // --- USERS ---
+    // Public read to allow username existence checks (or handle via Cloud Function for better security)
+    // Only 'create' allowed by anyone (registration)
+    // Updates restricted to owner
+    match /users/{userId} {
+      allow read: if request.auth != null; 
+      allow create: if true; 
+      allow update, delete: if request.auth.uid == userId;
+    }
+
+    // --- SESSIONS ---
+    // Only the user can read/delete their own sessions
+    // Server-side logic usually handles session creation/revocation, 
+    // but if client-side, must ensure userId matches.
+    match /sessions/{sessionId} {
+      allow read, delete: if request.auth.uid == resource.data.userId;
+      allow create: if request.auth.uid == request.resource.data.userId;
     }
 
     // --- TEMPLATES ---
-    // Users can read own templates.
-    // Writes are strictly controlled via Admin functions or specific endpoints, 
-    // but assuming client-side persistence simulation for this app, we block direct writes
-    // to enforce the "server functions only" architecture requested.
+    // Strict ownership. Only owner can read/write their templates.
     match /templates/{templateId} {
-      allow read: if request.auth.uid == resource.data.ownerId;
-      // No write allowed from client SDK. Use server functions.
-    }
-
-    // --- GAME STATE ---
-    // Users can read current game state if they own it.
-    match /games/{gameId} {
-      allow read: if request.auth.uid == resource.data.hostId;
-    }
-
-    // --- ADMIN & AUTH COLLECTIONS ---
-    // NO PUBLIC ACCESS. Backend Only.
-    match /admins/{adminId} {
-      allow read, write: if false;
-    }
-    
-    match /users/{userId} {
-      allow read, write: if false;
-    }
-
-    match /tokens/{tokenId} {
-      allow read, write: if false;
-    }
-
-    match /sessions/{sessionId} {
-      allow read, write: if false;
-    }
-
-    match /auditLogs/{logId} {
-      allow read, write: if false;
+      allow read, write: if request.auth.uid == resource.data.ownerId;
+      allow create: if request.auth.uid == request.resource.data.ownerId;
     }
   }
 }

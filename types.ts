@@ -1,5 +1,4 @@
 
-
 export enum QuestionState {
   AVAILABLE = 'AVAILABLE',
   ACTIVE = 'ACTIVE',     // Currently displayed
@@ -41,13 +40,6 @@ export interface Template {
   createdAt: number;
 }
 
-export interface Production {
-  id: string;
-  userId: string; // Links to User.id (not username)
-  name: string;
-  createdAt: number;
-}
-
 export interface Player {
   id: number;
   name: string;
@@ -57,98 +49,33 @@ export interface Player {
 
 export interface GameState {
   isActive: boolean;
-  eventName: string; // The specific event name (e.g., "Friday Night Trivia")
-  gameTitle: string; // Usually the template name
+  gameTitle: string; // NEW: Live editable title
   templateId: string | null;
   categories: Category[];
   players: Player[];
   activePlayerIndex: number;
-  askedPlayerIndex?: number; // The player who was active when the question was selected
   currentQuestion: { categoryId: string; questionId: string } | null;
-  currentQuestionState: QuestionState | null; 
+  currentQuestionState: QuestionState | null; // NEW: Single source of truth for UI gating
   activityLog: string[];
   timer: number;
   isTimerRunning: boolean;
   directorMode: boolean; // Is director panel open
-  productionName?: string; // Snapshot of production name
-}
-
-// --- AUTH & ADMIN SYSTEM ---
-
-export type UserStatus = 'ACTIVE' | 'REVOKED' | 'SUSPENDED';
-
-export interface Admin {
-  id: string;
-  username: string;
-  passwordHash: string;
-  salt: string;
-  createdAt: number;
-  lastLoginAt: number | null;
 }
 
 export interface User {
-  id: string;
   username: string;
-  status: UserStatus;
-  createdAt: number;
-  updatedAt: number;
-  lastLoginAt: number | null;
-  notes?: string;
-  passwordHash: string;
+  passwordHash: string; // Stored securely
   salt: string;
-}
-
-export interface AuthToken {
-  id: string;
-  userId: string;
-  tokenHash: string;
-  salt: string;
-  label?: string;
   createdAt: number;
-  expiresAt: number | null; // null = never
-  revokedAt: number | null;
-  lastUsedAt: number | null;
-  rotationCount: number;
 }
 
 export interface Session {
   sessionId: string;
-  userId: string;
-  userType: 'ADMIN' | 'USER';
   username: string;
   userAgent: string;
   createdAt: number;
   lastHeartbeat: number;
   expiresAt: number;
-}
-
-export type TokenRequestStatus = 'PENDING' | 'CONTACTED' | 'APPROVED' | 'REJECTED';
-
-export interface TokenRequest {
-  id: string;
-  firstName: string;
-  lastName: string;
-  tiktokHandle: string;
-  phoneNumber: string; // New field for contact
-  preferredUsername: string;
-  status: TokenRequestStatus;
-  emailStatus: 'PENDING' | 'SENT' | 'FAILED';
-  createdAt: number;
-  updatedAt: number;
-  deviceHash: string; // For rate limiting
-  ipHash?: string; // Simulated IP hash
-  adminNotes?: string;
-  lastError?: string;
-}
-
-export interface AuditLogEntry {
-  id: string;
-  timestamp: number;
-  adminId: string;
-  action: string;
-  targetUserId?: string;
-  targetTokenId?: string;
-  metadata?: any;
 }
 
 // For AI Generation
