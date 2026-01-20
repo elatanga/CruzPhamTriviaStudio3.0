@@ -1,4 +1,5 @@
 
+
 export enum QuestionState {
   AVAILABLE = 'AVAILABLE',
   ACTIVE = 'ACTIVE',     // Currently displayed
@@ -93,6 +94,8 @@ export interface User {
   updatedAt: number;
   lastLoginAt: number | null;
   notes?: string;
+  passwordHash: string;
+  salt: string;
 }
 
 export interface AuthToken {

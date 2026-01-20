@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  GameState, Template, Category, Question, QuestionState, Player, User, Session, BoardConfig
+  GameState, Template, Category, Question, QuestionState, Player, User, Session, BoardConfig, TokenRequest
 } from './types';
 import { StorageService } from './services/storageService';
 import { generateTriviaContent } from './services/geminiService';
 import { logger } from './services/loggerService';
 import { soundService } from './services/soundService'; 
+import { API } from './services/api'; // Use API for Registration
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ToastProvider, useToast } from './context/ToastContext';
 import { UI_TEXT } from './constants/uiText';
@@ -28,7 +30,9 @@ const Icons = {
   Menu: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>,
   User: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
   Trophy: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-  Attach: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg> // Icon for re-attaching
+  Attach: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" /></svg>,
+  Refresh: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+  Mail: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
 };
 
 // --- Helper Components ---
@@ -61,7 +65,7 @@ const BrandHeader: React.FC<{ className?: string }> = ({ className = "" }) => (
   </div>
 );
 
-// --- DIRECTOR PLACEHOLDER COMPONENT (For Main Window when detached) ---
+// --- DIRECTOR COMPONENT IMPORTS KEPT INLINE FOR SIMPLICITY ---
 const DirectorPlaceholder: React.FC<{
   onBringBack: () => void;
   className?: string;
@@ -80,7 +84,6 @@ const DirectorPlaceholder: React.FC<{
   );
 };
 
-// --- DIRECTOR PANEL COMPONENT ---
 const DirectorPanel: React.FC<{
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
@@ -359,7 +362,7 @@ const DirectorPanel: React.FC<{
 function CruzPhamTriviaApp() {
   const { showToast } = useToast();
   const [session, setSession] = useState<Session | null>(null);
-  const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'GAME' | 'DIRECTOR_DETACHED'>('LOGIN');
+  const [view, setView] = useState<'LOGIN' | 'DASHBOARD' | 'GAME' | 'DIRECTOR_DETACHED' | 'ADMIN_CONSOLE'>('LOGIN');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
@@ -373,6 +376,7 @@ function CruzPhamTriviaApp() {
   // Game State
   const [gameState, setGameState] = useState<GameState>({
     isActive: false,
+    eventName: "", // Initialize eventName
     gameTitle: "",
     templateId: null,
     categories: [],
@@ -404,8 +408,22 @@ function CruzPhamTriviaApp() {
   // Auth State
   const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
   const [authLoading, setAuthLoading] = useState(false);
-  const [registerSuccessToken, setRegisterSuccessToken] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  
+  // Registration Form State
+  const [regForm, setRegForm] = useState({
+    firstName: '',
+    lastName: '',
+    tiktokHandle: '',
+    phoneNumber: '',
+    preferredUsername: ''
+  });
+  const [reqSuccess, setReqSuccess] = useState(false);
+
+  // Admin Console State
+  const [adminRequests, setAdminRequests] = useState<TokenRequest[]>([]);
+  // Admin: Token Modal State
+  const [tokenModal, setTokenModal] = useState<{ isOpen: boolean; username: string; token: string } | null>(null);
 
   // Broadcast Channel for Detached Director
   const broadcastRef = useRef<BroadcastChannel | null>(null);
@@ -529,22 +547,12 @@ function CruzPhamTriviaApp() {
   }, [session, logout, showToast]);
 
   // --- Actions ---
-  const handleAuth = async (isRegister: boolean, username: string, token?: string) => {
+  const handleAuth = async (username: string, token: string) => {
     initAudio(); 
     soundService.playClick();
     setAuthLoading(true);
     setAuthError(null);
     try {
-      if (isRegister) {
-        const res = await StorageService.register(username);
-        if (res.success && res.token) {
-          setRegisterSuccessToken(res.token);
-          showToast("Identity Generated Successfully", 'success');
-        } else {
-          setAuthError(res.error || UI_TEXT.auth.errors.invalid);
-          showToast(res.error || "Registration failed", 'error');
-        }
-      } else {
         const res = await StorageService.login(username, token || "");
         if (res.success && res.session) {
           setSession(res.session);
@@ -555,7 +563,6 @@ function CruzPhamTriviaApp() {
           setAuthError(res.error || UI_TEXT.auth.errors.invalid);
           showToast("Invalid Credentials", 'error');
         }
-      }
     } catch {
       setAuthError(UI_TEXT.auth.errors.system);
       showToast("Critical Authentication Error", 'error');
@@ -564,6 +571,77 @@ function CruzPhamTriviaApp() {
     }
   };
 
+  const handleRegistrationSubmit = async () => {
+    initAudio();
+    soundService.playClick();
+    setAuthLoading(true);
+    setAuthError(null);
+    
+    try {
+       const res = await API.submitTokenRequest(regForm);
+       if (res.success) {
+          setReqSuccess(true);
+          showToast("Request Sent Successfully", 'success');
+       } else {
+          setAuthError(res.error?.message || "Unknown error");
+          showToast(res.error?.message || "Error submitting request", 'error');
+       }
+    } catch (e) {
+       setAuthError("Network or System Error");
+    } finally {
+       setAuthLoading(false);
+    }
+  };
+
+  // --- Admin Logic ---
+  const isAdmin = session && ['admin', 'cruzpham', 'eldecoder'].includes(session.username);
+
+  useEffect(() => {
+    if (view === 'ADMIN_CONSOLE' && isAdmin) {
+       API.getRequests().then(setAdminRequests);
+    }
+  }, [view, isAdmin]);
+
+  const handleRetryEmail = async (requestId: string) => {
+     soundService.playClick();
+     showToast("Retrying Email...", 'info');
+     try {
+       const res = await API.retryTokenRequestEmail(requestId);
+       if (res.success) {
+          showToast("Email Sent Successfully", 'success');
+          // Refresh list
+          API.getRequests().then(setAdminRequests);
+       } else {
+          showToast(res.error?.message || "Retry Failed", 'error');
+       }
+     } catch (e: any) {
+       showToast("Retry Failed: " + e.message, 'error');
+     }
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    soundService.playAward();
+    try {
+      const res = await StorageService.approveTokenRequest(requestId);
+      if (res.success && res.token) {
+        // Fetch fresh request data to get username if needed, or iterate
+        const req = adminRequests.find(r => r.id === requestId);
+        setTokenModal({
+           isOpen: true,
+           username: req?.preferredUsername || 'User',
+           token: res.token
+        });
+        API.getRequests().then(setAdminRequests);
+        showToast("Token Generated Successfully", 'success');
+      } else {
+        showToast(res.error || "Failed to Approve", 'error');
+      }
+    } catch (e) {
+      showToast("System Error", 'error');
+    }
+  };
+
+  // --- Start Game Logic ---
   const startGame = (template: Template) => {
     initAudio();
     const cid = crypto.randomUUID();
@@ -891,8 +969,8 @@ function CruzPhamTriviaApp() {
     return (
       <div className="h-dvh w-full flex flex-col bg-luxury-black bg-luxury-radial font-serif text-gold-400 overflow-hidden">
         <BrandHeader />
-        <div className="flex-1 flex flex-col items-center justify-center p-4">
-            <div className="w-[90%] max-w-[400px] border border-gold-600/30 bg-luxury-dark/95 backdrop-blur-xl p-8 rounded-sm shadow-glow flex flex-col items-center relative">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-y-auto">
+            <div className="w-[90%] max-w-[400px] border border-gold-600/30 bg-luxury-dark/95 backdrop-blur-xl p-8 rounded-sm shadow-glow flex flex-col items-center relative shrink-0">
             {!isOnline && <div className="absolute top-2 right-2 text-red-500 text-[10px] flex items-center gap-1"><Icons.WifiOff/> {UI_TEXT.auth.offline}</div>}
             
             <div className="mb-8 text-center">
@@ -902,7 +980,7 @@ function CruzPhamTriviaApp() {
 
             <div className="flex w-full mb-6 border-b border-gold-900">
                 {['LOGIN', 'REGISTER'].map(m => (
-                <button key={m} onClick={() => { setAuthMode(m as any); setAuthError(null); setRegisterSuccessToken(null); soundService.playClick(); }}
+                <button key={m} onClick={() => { setAuthMode(m as any); setAuthError(null); setReqSuccess(false); soundService.playClick(); }}
                     className={`flex-1 py-3 text-xs tracking-widest transition-colors ${authMode === m ? 'text-gold-300 border-b-2 border-gold-400' : 'text-zinc-600 hover:text-gold-700'}`}>
                     {m === 'LOGIN' ? UI_TEXT.auth.tabs.login : UI_TEXT.auth.tabs.register}
                 </button>
@@ -912,7 +990,7 @@ function CruzPhamTriviaApp() {
             {authError && <div className="w-full text-center text-red-400 text-xs mb-4 bg-red-900/10 py-2 border border-red-900/30">{authError}</div>}
 
             {authMode === 'LOGIN' ? (
-                <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(false, e.target.username.value, e.target.token.value); }}>
+                <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(e.target.username.value, e.target.token.value); }}>
                 <div className="space-y-1">
                     <input name="username" placeholder={UI_TEXT.auth.login.usernamePlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
                 </div>
@@ -922,20 +1000,29 @@ function CruzPhamTriviaApp() {
                 <p className="text-[10px] text-zinc-600 text-center px-4">{UI_TEXT.auth.login.helper}</p>
                 <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? UI_TEXT.auth.login.authenticating : UI_TEXT.auth.login.button}</Button>
                 </form>
-            ) : registerSuccessToken ? (
+            ) : reqSuccess ? (
                 <div className="w-full text-center animate-pulse">
-                <p className="text-xs text-green-500 mb-2 font-sans font-bold">{UI_TEXT.auth.register.successTitle}</p>
-                <div className="bg-gold-200 text-black font-mono text-sm p-4 break-all border-2 border-gold-500 mb-2 cursor-pointer hover:bg-white" onClick={() => navigator.clipboard.writeText(registerSuccessToken)}>
-                    {registerSuccessToken}
-                </div>
-                <p className="text-[9px] text-red-500 uppercase font-bold tracking-wider mb-4">{UI_TEXT.auth.register.copyWarning}</p>
-                <Button className="w-full" onClick={() => { setAuthMode('LOGIN'); setRegisterSuccessToken(null); soundService.playClick(); }}>{UI_TEXT.auth.register.proceedButton}</Button>
+                   <p className="text-sm text-green-500 mb-4 font-bold">{UI_TEXT.auth.request.success.title}</p>
+                   <p className="text-xs text-zinc-400 mb-6">{UI_TEXT.auth.request.success.message}</p>
+                   <Button className="w-full" onClick={() => { setAuthMode('LOGIN'); setReqSuccess(false); soundService.playClick(); }}>{UI_TEXT.auth.request.success.done}</Button>
                 </div>
             ) : (
-                <form className="w-full space-y-4" onSubmit={(e: any) => { e.preventDefault(); handleAuth(true, e.target.username.value); }}>
-                <p className="text-[10px] text-center text-zinc-500">{UI_TEXT.auth.register.desc}</p>
-                <input name="username" placeholder={UI_TEXT.auth.register.usernamePlaceholder} className="w-full bg-black border border-gold-900 p-3 text-center text-gold-200 focus:border-gold-500 outline-none placeholder:text-zinc-800 tracking-wider text-sm" />
-                <Button className="w-full py-4 mt-2" disabled={authLoading || !isOnline}>{authLoading ? UI_TEXT.auth.register.generating : UI_TEXT.auth.register.button}</Button>
+                <form className="w-full space-y-3" onSubmit={(e: any) => { e.preventDefault(); handleRegistrationSubmit(); }}>
+                   <p className="text-[10px] text-center text-zinc-500 mb-2">{UI_TEXT.auth.request.desc}</p>
+                   <div className="grid grid-cols-2 gap-2">
+                      <input placeholder={UI_TEXT.auth.request.fields.first} className="bg-black border border-gold-900 p-2 text-gold-200 text-xs text-center focus:border-gold-500 outline-none uppercase" 
+                             value={regForm.firstName} onChange={e => setRegForm({...regForm, firstName: e.target.value})} required />
+                      <input placeholder={UI_TEXT.auth.request.fields.last} className="bg-black border border-gold-900 p-2 text-gold-200 text-xs text-center focus:border-gold-500 outline-none uppercase"
+                             value={regForm.lastName} onChange={e => setRegForm({...regForm, lastName: e.target.value})} required />
+                   </div>
+                   <input placeholder={UI_TEXT.auth.request.fields.tiktok} className="w-full bg-black border border-gold-900 p-2 text-gold-200 text-xs text-center focus:border-gold-500 outline-none"
+                          value={regForm.tiktokHandle} onChange={e => setRegForm({...regForm, tiktokHandle: e.target.value})} required />
+                   <input placeholder="PHONE NUMBER" className="w-full bg-black border border-gold-900 p-2 text-gold-200 text-xs text-center focus:border-gold-500 outline-none"
+                          value={regForm.phoneNumber} onChange={e => setRegForm({...regForm, phoneNumber: e.target.value})} required />
+                   <input placeholder={UI_TEXT.auth.request.fields.user} className="w-full bg-black border border-gold-900 p-2 text-gold-200 text-xs text-center focus:border-gold-500 outline-none uppercase"
+                          value={regForm.preferredUsername} onChange={e => setRegForm({...regForm, preferredUsername: e.target.value})} required />
+                   
+                   <Button className="w-full py-3 mt-2" disabled={authLoading || !isOnline}>{authLoading ? UI_TEXT.auth.request.buttons.sending : UI_TEXT.auth.request.buttons.submit}</Button>
                 </form>
             )}
             </div>
@@ -952,9 +1039,9 @@ function CruzPhamTriviaApp() {
     <header className="h-[6dvh] min-h-[48px] flex items-center justify-between px-3 md:px-4 bg-gradient-to-r from-luxury-black to-luxury-dark border-b border-gold-900/50 shrink-0 z-30 pt-safe">
       <div className="flex items-center gap-2 md:gap-4 overflow-hidden">
         <span className="font-serif font-bold text-base md:text-lg text-gold-400 tracking-widest truncate">
-          {gameState.isActive && gameState.gameTitle ? gameState.gameTitle : UI_TEXT.brand.appName}
+          {view === 'ADMIN_CONSOLE' ? UI_TEXT.admin.title : (gameState.isActive && gameState.gameTitle ? gameState.gameTitle : UI_TEXT.brand.appName)}
         </span>
-        {gameState.isActive && (
+        {gameState.isActive && view === 'GAME' && (
           <div className="flex items-center gap-2 bg-black/40 px-2 py-1 rounded border border-gold-900/30">
              <span className={`font-mono text-sm md:text-xl leading-none ${gameState.timer < 5 && gameState.isTimerRunning ? 'text-red-500 animate-ping' : 'text-gold-200'}`}>{gameState.timer < 10 ? `0${gameState.timer}` : gameState.timer}</span>
              <button onClick={() => setGameState(p => ({...p, isTimerRunning: !p.isTimerRunning}))} className="text-gold-500 hover:text-white">{gameState.isTimerRunning ? <Icons.Pause/> : <Icons.Play/>}</button>
@@ -969,9 +1056,16 @@ function CruzPhamTriviaApp() {
         
         {/* Mobile Menu / Desktop Controls */}
         <div className="hidden md:flex items-center gap-4">
-            {view === 'DASHBOARD' ? (
+            {view === 'DASHBOARD' || view === 'ADMIN_CONSOLE' ? (
               <>
-                <span>{templates.length} TEMPLATES</span>
+                {view === 'ADMIN_CONSOLE' ? (
+                  <button onClick={() => {setView('DASHBOARD'); soundService.playClick();}} className="text-gold-500 hover:text-white transition-colors">BACK TO DASHBOARD</button>
+                ) : (
+                  <>
+                     {isAdmin && <button onClick={() => {setView('ADMIN_CONSOLE'); soundService.playClick();}} className="text-red-500 hover:text-red-300 transition-colors border border-red-900/50 px-2 py-1 bg-red-900/10">ADMIN CONSOLE</button>}
+                     <span>{templates.length} TEMPLATES</span>
+                  </>
+                )}
                 <button onClick={() => {logout(); soundService.playClick();}} className="text-gold-500 hover:text-white transition-colors">LOGOUT</button>
               </>
             ) : (
@@ -983,9 +1077,9 @@ function CruzPhamTriviaApp() {
             )}
         </div>
         
-        {/* Mobile Hamburger Logic could go here, but for now we simplify */}
+        {/* Mobile Hamburger Logic */}
         <div className="md:hidden flex gap-3">
-             {view !== 'DASHBOARD' && (
+             {view !== 'DASHBOARD' && view !== 'ADMIN_CONSOLE' && (
                 <button onClick={() => setGameState(p => ({...p, directorMode: true}))} className="text-gold-500"><Icons.Edit/></button>
              )}
              <button onClick={() => view === 'DASHBOARD' ? logout() : setView('DASHBOARD')} className="text-gold-500"><Icons.Close/></button>
@@ -1001,228 +1095,259 @@ function CruzPhamTriviaApp() {
     </div>
   );
 
+  // --- ADMIN CONSOLE VIEW ---
+  if (view === 'ADMIN_CONSOLE') {
+      return (
+        <div className="h-dvh w-full flex flex-col bg-luxury-black text-gold-300">
+           <Header />
+           <div className="flex-1 p-6 overflow-y-auto relative">
+              <div className="flex justify-between items-center mb-6">
+                 <h2 className="text-2xl font-serif text-gold-200 tracking-widest">{UI_TEXT.admin.nav.requests}</h2>
+                 <Button variant="secondary" onClick={() => API.getRequests().then(setAdminRequests)}><Icons.Refresh/> REFRESH</Button>
+              </div>
+
+              <div className="bg-luxury-panel border border-gold-900/30 rounded overflow-hidden">
+                 <div className="grid grid-cols-6 gap-4 p-4 border-b border-gold-900 bg-black/50 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                    <div className="col-span-1">Timestamp</div>
+                    <div className="col-span-1">Username</div>
+                    <div className="col-span-1">TikTok</div>
+                    <div className="col-span-1">Phone</div>
+                    <div className="col-span-1">Email Status</div>
+                    <div className="col-span-1 text-right">Actions</div>
+                 </div>
+                 {adminRequests.length === 0 ? (
+                    <div className="p-8 text-center text-zinc-600 text-sm">No pending requests</div>
+                 ) : (
+                    adminRequests.map(req => (
+                       <div key={req.id} className="grid grid-cols-6 gap-4 p-4 border-b border-gold-900/10 hover:bg-gold-900/5 items-center text-xs">
+                          <div className="text-zinc-400">{new Date(req.createdAt).toLocaleString()}</div>
+                          <div className="text-gold-200 font-bold">{req.preferredUsername}</div>
+                          <div className="text-zinc-400">{req.tiktokHandle}</div>
+                          <div className="text-zinc-400">{req.phoneNumber}</div>
+                          <div className="flex flex-col">
+                             <span className={req.emailStatus === 'SENT' ? 'text-green-500' : 'text-red-500 font-bold'}>{req.emailStatus}</span>
+                             {req.emailStatus === 'FAILED' && <span className="text-[9px] text-red-400/70 truncate" title={req.lastError}>{req.lastError}</span>}
+                          </div>
+                          <div className="flex justify-end gap-2">
+                             {req.emailStatus === 'FAILED' && (
+                                <Button variant="secondary" className="py-1 px-2 text-[10px]" onClick={() => handleRetryEmail(req.id)}>RETRY EMAIL</Button>
+                             )}
+                             <Button 
+                               variant="primary" 
+                               className="py-1 px-2 text-[10px]" 
+                               disabled={req.status !== 'PENDING'}
+                               onClick={() => handleApproveRequest(req.id)}
+                             >
+                                {req.status === 'PENDING' ? 'APPROVE' : 'DONE'}
+                             </Button>
+                          </div>
+                       </div>
+                    ))
+                 )}
+              </div>
+              
+              {/* Token Modal */}
+              {tokenModal && tokenModal.isOpen && (
+                <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="w-full max-w-md bg-luxury-panel border-2 border-gold-500 p-8 rounded-sm shadow-glow-strong text-center relative">
+                        <h3 className="text-xl font-serif text-gold-400 tracking-widest mb-2">{UI_TEXT.admin.tokens.modalTitle}</h3>
+                        <p className="text-xs text-zinc-500 mb-6 uppercase tracking-wider">For: <span className="text-white font-bold">{tokenModal.username}</span></p>
+                        
+                        <div className="bg-black border border-zinc-800 p-4 mb-6 select-all">
+                            <span className="font-mono text-2xl text-green-500 tracking-wider break-all">{tokenModal.token}</span>
+                        </div>
+                        
+                        <p className="text-xs text-red-500 mb-6 font-bold">{UI_TEXT.admin.tokens.warning}</p>
+                        
+                        <div className="flex gap-2">
+                            <Button className="flex-1 py-3" onClick={() => { navigator.clipboard.writeText(tokenModal.token); showToast("Token Copied", 'success'); }}>{UI_TEXT.admin.tokens.copy}</Button>
+                            <Button variant="secondary" className="flex-1 py-3" onClick={() => setTokenModal(null)}>{UI_TEXT.admin.tokens.close}</Button>
+                        </div>
+                    </div>
+                </div>
+              )}
+           </div>
+           <Footer />
+        </div>
+      );
+  }
+
+  // --- DASHBOARD VIEW ---
   if (view === 'DASHBOARD') {
-    const pageTemplates = templates.slice(dashboardPage * ITEMS_PER_PAGE, (dashboardPage + 1) * ITEMS_PER_PAGE);
-    
-    // Step 1: Initialize Creation with Setup Modal
-    const startCreation = () => {
-      soundService.playClick();
-      setSetupConfig({ cols: 5, rows: 5 });
-      setIsSetupOpen(true);
-    };
-
-    // Step 2: Generate Template from Config
-    const handleCreateFromSetup = () => {
-      const rows = setupConfig.rows;
-      const cols = setupConfig.cols;
-      
-      const newT: Template = { 
-        id: crypto.randomUUID(), 
-        name: "UNTITLED SHOW", 
-        rows, 
-        cols,
-        boardConfig: {
-          version: 2,
-          columns: cols,
-          rows: rows,
-          pointValues: Array.from({length: rows}, (_, i) => Math.min((i + 1) * 100, 1000))
-        },
-        createdAt: Date.now(), 
-        categories: Array(cols).fill(0).map((_, i) => {
-           // Randomly assign one Double or Nothing per category for the template default
-           const doubleIndex = Math.floor(Math.random() * rows);
-           return {
-              id: crypto.randomUUID(), 
-              name: `CAT ${i+1}`, 
-              questions: Array(rows).fill(0).map((_, j) => ({
-                id: crypto.randomUUID(), 
-                question: "Edit Me", 
-                answer: "Answer", 
-                points: Math.min((j + 1) * 100, 1000), 
-                state: QuestionState.AVAILABLE, 
-                isDoubleOrNothing: j === doubleIndex
-              }))
-           };
-        }) 
-      };
-      
-      setEditingTemplate(newT); 
-      setIsSetupOpen(false);
-      setIsEditorOpen(true); 
-      soundService.playClick();
-    };
-
     return (
       <div className="h-dvh w-full flex flex-col bg-luxury-black text-gold-300">
         <Header />
-        <div className="flex-1 p-4 md:p-6 flex flex-col min-h-0 overflow-y-auto">
-          <div className="flex justify-between items-center mb-4 shrink-0">
-            <h2 className="text-xl md:text-2xl font-serif text-gold-200 tracking-widest">{UI_TEXT.dashboard.title}</h2>
-            <Button onClick={startCreation} variant="primary">{UI_TEXT.dashboard.newButton}</Button>
-          </div>
-          
-          {pageTemplates.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-zinc-600">
-                <Icons.Menu />
-                <p className="mt-4 text-sm font-sans">{UI_TEXT.dashboard.emptyState}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pb-20 md:pb-0">
-                {pageTemplates.map(t => (
-                <div key={t.id} className="relative group border border-gold-900/30 bg-luxury-panel/50 hover:bg-luxury-panel hover:border-gold-600/50 transition-all p-4 flex flex-col justify-between min-h-[140px]">
-                    <div>
-                    <h3 className="font-bold text-gold-100 truncate tracking-wide">{t.name}</h3>
-                    <p className="text-[10px] text-zinc-600 mt-1 uppercase">{t.cols} x {t.rows} GRID</p>
-                    </div>
-                    <div className="flex gap-2 mt-4 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="secondary" className="flex-1 py-1" onClick={() => { setEditingTemplate(t); setIsEditorOpen(true); soundService.playClick(); }}>{UI_TEXT.dashboard.card.edit}</Button>
-                    <Button variant="primary" className="flex-1 py-1" onClick={() => startGame(t)}>{UI_TEXT.dashboard.card.live}</Button>
-                    <button onClick={() => {
-                        if(session) {
-                        StorageService.deleteTemplate(session.username, t.id);
-                        setTemplates(StorageService.getTemplates(session.username));
-                        showToast("Template Deleted", 'info');
-                        soundService.playVoid();
-                        }
-                    }} className="text-red-900 hover:text-red-500 p-1"><Icons.Trash/></button>
-                    </div>
-                </div>
-                ))}
-            </div>
-          )}
+        <div className="flex-1 p-4 md:p-8 overflow-y-auto">
+             <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl md:text-3xl font-serif text-gold-200 tracking-widest">{isAdmin ? UI_TEXT.dashboard.adminTitle : UI_TEXT.dashboard.title}</h2>
+                <Button onClick={() => { 
+                   // Create new template logic
+                   const newT: Template = {
+                     id: crypto.randomUUID(),
+                     name: `NEW SHOW ${new Date().toLocaleDateString()}`,
+                     rows: 5, cols: 5,
+                     createdAt: Date.now(),
+                     categories: Array(5).fill(null).map((_, i) => ({
+                       id: crypto.randomUUID(),
+                       name: `CATEGORY ${i+1}`,
+                       questions: Array(5).fill(null).map((_, j) => ({
+                         id: crypto.randomUUID(),
+                         question: "", answer: "", points: (j+1)*100,
+                         state: QuestionState.AVAILABLE, isDoubleOrNothing: false
+                       }))
+                     }))
+                   };
+                   if (session) {
+                      StorageService.saveTemplate(session.username, newT);
+                      setTemplates(StorageService.getTemplates(session.username));
+                      setEditingTemplate(newT);
+                      setIsEditorOpen(true);
+                      soundService.playClick();
+                   }
+                }}><Icons.Edit /> {UI_TEXT.dashboard.newButton}</Button>
+             </div>
 
-          <div className="h-12 shrink-0 flex items-center justify-center gap-4 mt-auto py-4">
-             <Button variant="icon" disabled={dashboardPage === 0} onClick={() => {setDashboardPage(p => p - 1); soundService.playClick();}}><Icons.ChevronLeft/></Button>
-             <span className="text-xs font-mono text-zinc-600">{UI_TEXT.dashboard.pagination} {dashboardPage + 1}</span>
-             <Button variant="icon" disabled={(dashboardPage + 1) * ITEMS_PER_PAGE >= templates.length} onClick={() => {setDashboardPage(p => p + 1); soundService.playClick();}}><Icons.ChevronRight/></Button>
-          </div>
+             {templates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-64 border border-zinc-800 rounded-sm bg-zinc-900/20 text-center">
+                   <p className="text-zinc-500 mb-4">{UI_TEXT.dashboard.emptyState}</p>
+                </div>
+             ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                   {templates.map(t => (
+                      <div key={t.id} className="bg-luxury-panel border border-gold-900/50 p-4 hover:border-gold-600 transition-colors group relative">
+                          <h3 className="text-gold-100 font-bold truncate mb-1">{t.name}</h3>
+                          <p className="text-[10px] text-zinc-500 mb-4 uppercase tracking-wider">{new Date(t.createdAt).toLocaleDateString()}</p>
+                          
+                          <div className="grid grid-cols-2 gap-2">
+                             <Button variant="primary" className="w-full text-[10px]" onClick={() => startGame(t)}>{UI_TEXT.dashboard.card.live}</Button>
+                             <Button variant="secondary" className="w-full text-[10px]" onClick={() => {
+                                setEditingTemplate(t);
+                                setIsEditorOpen(true);
+                                soundService.playClick();
+                             }}>{UI_TEXT.dashboard.card.edit}</Button>
+                             <Button variant="ghost" className="w-full text-[10px]" onClick={() => {
+                                StorageService.exportTemplate(session!.username, t.id);
+                             }} title="Download JSON"><Icons.Copy/></Button>
+                             <Button variant="danger" className="w-full text-[10px]" onClick={() => {
+                                if(confirm("Delete this show?")) {
+                                   StorageService.deleteTemplate(session!.username, t.id);
+                                   setTemplates(StorageService.getTemplates(session!.username));
+                                   soundService.playVoid();
+                                }
+                             }}><Icons.Trash/></Button>
+                          </div>
+                      </div>
+                   ))}
+                </div>
+             )}
         </div>
         <Footer />
         
-        {/* BOARD SETUP MODAL */}
-        {isSetupOpen && (
-           <div className="absolute inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-6">
-              <div className="w-full max-w-4xl bg-luxury-panel border border-gold-600 shadow-glow-strong flex flex-col md:flex-row rounded-sm overflow-hidden animate-in fade-in zoom-in duration-300">
-                 {/* LEFT: Controls */}
-                 <div className="md:w-1/3 p-8 border-r border-gold-900/50 flex flex-col gap-8 bg-gradient-to-br from-luxury-dark to-black">
-                    <h2 className="text-xl font-serif text-gold-400 tracking-widest border-b border-gold-800 pb-2">{UI_TEXT.setup.title}</h2>
-                    
-                    <div className="space-y-4">
-                       <div>
-                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">{UI_TEXT.setup.colsLabel}</label>
-                          <div className="flex items-center gap-4">
-                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, cols: Math.max(1, p.cols - 1)}))}>-</Button>
-                             <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.cols}</span>
-                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, cols: Math.min(8, p.cols + 1)}))}>+</Button>
-                          </div>
-                       </div>
-                       
-                       <div>
-                          <label className="text-xs text-zinc-500 font-bold tracking-widest block mb-2">{UI_TEXT.setup.rowsLabel}</label>
-                          <div className="flex items-center gap-4">
-                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.max(1, p.rows - 1)}))}>-</Button>
-                             <span className="text-2xl font-mono text-gold-100 w-8 text-center">{setupConfig.rows}</span>
-                             <Button variant="secondary" onClick={() => setSetupConfig(p => ({...p, rows: Math.min(10, p.rows + 1)}))}>+</Button>
-                          </div>
-                          <p className="text-[9px] text-zinc-600 mt-2">{UI_TEXT.setup.rowsHelper}</p>
-                       </div>
+        {/* Editor Modal */}
+        {isEditorOpen && editingTemplate && (
+           <div className="fixed inset-0 z-50 bg-black/95 flex flex-col">
+              <div className="p-4 border-b border-gold-900 flex justify-between items-center bg-luxury-panel">
+                 <h2 className="text-gold-400 font-serif tracking-widest">{UI_TEXT.editor.title}</h2>
+                 <div className="flex gap-2">
+                    <Button variant="primary" onClick={() => {
+                        if (session && editingTemplate) {
+                           StorageService.saveTemplate(session.username, editingTemplate);
+                           setTemplates(StorageService.getTemplates(session.username));
+                           setIsEditorOpen(false);
+                           setEditingTemplate(null);
+                           soundService.playClick();
+                           showToast("Changes Saved", 'success');
+                        }
+                    }}>{UI_TEXT.editor.save}</Button>
+                    <Button variant="secondary" onClick={() => { setIsEditorOpen(false); setEditingTemplate(null); }}>{UI_TEXT.editor.cancel}</Button>
+                 </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4">
+                 <div className="mb-6 flex flex-col md:flex-row gap-4 items-end bg-zinc-900/30 p-4 border border-zinc-800">
+                    <div className="flex-1 w-full">
+                       <label className="text-[10px] text-gold-600 font-bold uppercase tracking-wider mb-1 block">Show Name</label>
+                       <input 
+                         className="w-full bg-black border border-gold-900 p-2 text-gold-100" 
+                         value={editingTemplate.name}
+                         onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})}
+                       />
                     </div>
-
-                    <div className="mt-auto flex flex-col gap-3">
-                       <Button variant="primary" onClick={handleCreateFromSetup} className="py-4 text-base">{UI_TEXT.setup.button}</Button>
-                       <Button variant="ghost" onClick={() => setIsSetupOpen(false)}>{UI_TEXT.setup.cancel}</Button>
+                    <div className="flex-1 w-full">
+                       <label className="text-[10px] text-gold-600 font-bold uppercase tracking-wider mb-1 block">{UI_TEXT.editor.aiLabel}</label>
+                       <div className="flex gap-2">
+                          <input 
+                             className="flex-1 bg-black border border-gold-900 p-2 text-gold-100 text-xs" 
+                             placeholder={UI_TEXT.editor.aiPlaceholder}
+                             value={aiPrompt}
+                             onChange={e => setAiPrompt(e.target.value)}
+                          />
+                          <select className="bg-black border border-gold-900 text-gold-500 text-xs p-2" value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)}>
+                             <option>Easy</option>
+                             <option>Medium</option>
+                             <option>Hard</option>
+                          </select>
+                          <Button disabled={isGenerating || !aiPrompt} onClick={handleAi}>
+                             {isGenerating ? '...' : UI_TEXT.editor.aiButton}
+                          </Button>
+                       </div>
                     </div>
                  </div>
 
-                 {/* RIGHT: Preview (Hidden on small mobile) */}
-                 <div className="hidden md:flex md:w-2/3 p-8 bg-black flex-col items-center justify-center relative">
-                    <span className="absolute top-4 right-4 text-[10px] text-zinc-600 uppercase tracking-widest">PREVIEW</span>
-                    <div className="w-full max-w-lg aspect-square flex gap-1 justify-center p-4 border border-zinc-800 rounded">
-                       {Array(setupConfig.cols).fill(0).map((_, i) => (
-                          <div key={i} className="flex flex-col gap-1 w-full max-w-[60px]">
-                             <div className="h-8 bg-gold-900/30 border border-gold-900 flex items-center justify-center">
-                                <span className="text-[6px] text-gold-700">CAT</span>
+                 {/* Grid Editor */}
+                 <div className="flex overflow-x-auto pb-8 gap-4">
+                    {editingTemplate.categories.map((cat, cIdx) => (
+                       <div key={cat.id} className="min-w-[250px] w-[250px] flex-shrink-0 flex flex-col gap-2">
+                          <input 
+                             className="w-full bg-gold-900/20 border border-gold-900 p-2 text-center text-gold-400 font-bold text-sm mb-2 uppercase"
+                             value={cat.name}
+                             onChange={e => {
+                                const newCats = [...editingTemplate.categories];
+                                newCats[cIdx].name = e.target.value;
+                                setEditingTemplate({...editingTemplate, categories: newCats});
+                             }}
+                          />
+                          {cat.questions.map((q, qIdx) => (
+                             <div key={q.id} className="bg-zinc-900 border border-zinc-800 p-2 text-xs flex flex-col gap-2 group hover:border-gold-700 transition-colors">
+                                <div className="flex justify-between text-[9px] text-zinc-500">
+                                   <span>${q.points}</span>
+                                   <button 
+                                     onClick={() => {
+                                       const newCats = [...editingTemplate.categories];
+                                       newCats[cIdx].questions[qIdx].isDoubleOrNothing = !q.isDoubleOrNothing;
+                                       setEditingTemplate({...editingTemplate, categories: newCats});
+                                     }}
+                                     className={q.isDoubleOrNothing ? "text-red-500 font-bold" : "hover:text-gold-500"}
+                                   >
+                                      {q.isDoubleOrNothing ? "★ D.O.N." : "☆ NORMAL"}
+                                   </button>
+                                </div>
+                                <textarea 
+                                   className="w-full bg-black border border-zinc-800 p-1 text-zinc-300 h-12 focus:border-gold-500 outline-none"
+                                   placeholder="Question"
+                                   value={q.question}
+                                   onChange={e => {
+                                      const newCats = [...editingTemplate.categories];
+                                      newCats[cIdx].questions[qIdx].question = e.target.value;
+                                      setEditingTemplate({...editingTemplate, categories: newCats});
+                                   }}
+                                />
+                                <input 
+                                   className="w-full bg-black border border-zinc-800 p-1 text-green-500/80 focus:border-green-500 outline-none"
+                                   placeholder="Answer"
+                                   value={q.answer}
+                                   onChange={e => {
+                                      const newCats = [...editingTemplate.categories];
+                                      newCats[cIdx].questions[qIdx].answer = e.target.value;
+                                      setEditingTemplate({...editingTemplate, categories: newCats});
+                                   }}
+                                />
                              </div>
-                             <div className="flex-1 flex flex-col gap-1">
-                                {Array(setupConfig.rows).fill(0).map((_, j) => (
-                                   <div key={j} className="flex-1 bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-                                      <span className="text-[6px] text-zinc-700">{Math.min((j+1)*100, 1000)}</span>
-                                   </div>
-                                ))}
-                             </div>
-                          </div>
-                       ))}
-                    </div>
+                          ))}
+                       </div>
+                    ))}
                  </div>
               </div>
            </div>
-        )}
-
-        {/* Editor Modal */}
-        {isEditorOpen && editingTemplate && (
-          <div className="absolute inset-0 z-50 bg-black flex flex-col">
-            <div className="h-16 border-b border-gold-900 flex items-center justify-between px-6 bg-luxury-panel shrink-0">
-               <div className="flex items-center gap-4 overflow-hidden">
-                 <span className="text-gold-500 font-bold hidden sm:inline">{UI_TEXT.editor.title}</span>
-                 <input className="bg-black border border-zinc-800 text-gold-100 px-2 py-1 focus:border-gold-500 outline-none w-32 md:w-64" value={editingTemplate.name} onChange={e => setEditingTemplate({...editingTemplate, name: e.target.value})} />
-               </div>
-               <div className="flex items-center gap-2 md:gap-4">
-                 <div className="hidden md:flex items-center gap-2 bg-black/30 p-1 border border-zinc-800 rounded">
-                    <span className="text-[10px] text-purple-400 pl-2">{UI_TEXT.editor.aiLabel}</span>
-                    <input className="bg-transparent text-white text-xs outline-none w-24" placeholder={UI_TEXT.editor.aiPlaceholder} value={aiPrompt} onChange={e => setAiPrompt(e.target.value)} />
-                    <select className="bg-black text-gold-400 text-[10px] border border-zinc-800 h-6 outline-none focus:border-gold-500 cursor-pointer" value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)}>
-                      <option value="Easy">EASY</option>
-                      <option value="Medium">MED</option>
-                      <option value="Hard">HARD</option>
-                      <option value="Expert">EXPT</option>
-                    </select>
-                    <Button variant="secondary" className="py-0 h-6 text-[10px]" onClick={handleAi} disabled={isGenerating}>{isGenerating ? '...' : UI_TEXT.editor.aiButton}</Button>
-                 </div>
-                 <Button variant="secondary" onClick={() => { setIsEditorOpen(false); setEditingTemplate(null); soundService.playClick(); }}>{UI_TEXT.editor.cancel}</Button>
-                 <Button variant="primary" onClick={() => { 
-                   if(session && editingTemplate) { 
-                     const saved = StorageService.saveTemplate(session.username, editingTemplate);
-                     if (saved) {
-                        setTemplates(StorageService.getTemplates(session.username)); 
-                        setIsEditorOpen(false);
-                        showToast("Show Saved Successfully", 'success');
-                        soundService.playAward();
-                     } else {
-                        showToast("Failed to save (Limit Reached?)", 'error');
-                        soundService.playVoid();
-                     }
-                   }
-                 }}>{UI_TEXT.editor.save}</Button>
-               </div>
-            </div>
-            {/* Dynamic Grid Layout for Editor */}
-            <div className="flex-1 overflow-auto p-4 grid gap-4 custom-scrollbar" style={{ gridTemplateColumns: `repeat(${editingTemplate.cols}, minmax(200px, 1fr))` }}>
-               {editingTemplate.categories.map((c, ci) => (
-                 <div key={c.id} className="flex flex-col gap-2 pb-10">
-                    <input className="bg-luxury-dark border border-gold-900 text-center text-gold-300 font-bold py-2" value={c.name} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].name = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
-                    {c.questions.map((q, qi) => (
-                      <div key={q.id} className={`bg-luxury-panel border p-2 flex flex-col gap-1 ${q.isDoubleOrNothing ? 'border-red-900/50 bg-red-900/10' : 'border-zinc-900'}`}>
-                        <div className="flex justify-between items-center text-[10px] text-zinc-500">
-                          <span>{q.points}</span>
-                          <button 
-                             onClick={() => {
-                               const nc = [...editingTemplate.categories]; 
-                               nc[ci].questions[qi].isDoubleOrNothing = !nc[ci].questions[qi].isDoubleOrNothing; 
-                               setEditingTemplate({...editingTemplate, categories: nc});
-                             }}
-                             className={`px-1 rounded border ${q.isDoubleOrNothing ? 'text-red-500 border-red-500' : 'text-zinc-700 border-zinc-800 hover:text-zinc-400'}`}
-                          >
-                             {q.isDoubleOrNothing ? UI_TEXT.editor.don : 'NORMAL'}
-                          </button>
-                        </div>
-                        <textarea className="bg-black text-zinc-300 text-xs p-1 resize-none h-12 border border-zinc-800 focus:border-gold-600 outline-none" value={q.question} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].question = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
-                        <input className="bg-black text-green-600 text-xs p-1 border border-zinc-800 focus:border-gold-600 outline-none" value={q.answer} onChange={e => { const nc = [...editingTemplate.categories]; nc[ci].questions[qi].answer = e.target.value; setEditingTemplate({...editingTemplate, categories: nc}); }} />
-                      </div>
-                    ))}
-                 </div>
-               ))}
-            </div>
-          </div>
         )}
       </div>
     );
@@ -1230,273 +1355,103 @@ function CruzPhamTriviaApp() {
 
   // --- GAME VIEW ---
   if (view === 'GAME') {
-    const activePlayer = gameState.players[gameState.activePlayerIndex];
-
-    return (
-      <div className="h-dvh w-full flex flex-col bg-luxury-black text-gold-100 overflow-hidden relative">
-        <Header />
-        
-        {/* --- MAIN STAGE AREA (FLEXIBLE) --- */}
-        <div className="flex-1 flex flex-col min-h-0 relative z-0">
-          
-          {/* MOBILE TABS (ONLY VISIBLE ON MOBILE) */}
-          <div className="md:hidden flex h-10 border-b border-zinc-900 bg-luxury-panel shrink-0">
-            <button onClick={() => setActiveMobileTab('BOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'BOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>BOARD</button>
-            <button onClick={() => setActiveMobileTab('LEADERBOARD')} className={`flex-1 text-[10px] font-bold tracking-widest ${activeMobileTab === 'LEADERBOARD' ? 'text-gold-400 border-b-2 border-gold-500' : 'text-zinc-600'}`}>LEADERBOARD</button>
-          </div>
-
-          {/* STAGE CONTENT CONTAINER */}
-          <div className="flex-1 relative overflow-hidden flex flex-col p-2 md:p-4 gap-4">
-              
-              {/* BOARD GRID (Visible if Board Tab active OR on Desktop) */}
-              <div className={`
-                ${(activeMobileTab === 'BOARD' || window.innerWidth >= 768) ? 'flex' : 'hidden'}
-                flex-1 grid gap-1 md:gap-2 min-h-0 overflow-auto custom-scrollbar
-              `} style={{ gridTemplateColumns: `repeat(${gameState.categories.length}, minmax(100px, 1fr))` }}>
-                {gameState.categories.map((cat, i) => (
-                  <div key={cat.id} className="flex flex-col h-full gap-1 lg:gap-2">
-                    {/* Header Tile */}
-                    <div className="h-12 md:h-[12%] min-h-[40px] bg-gradient-to-b from-luxury-panel to-black border border-gold-900 flex items-center justify-center p-1 shadow-lg shrink-0">
-                      <span className="font-serif font-bold text-center text-gold-300 leading-tight uppercase break-words text-responsive-base line-clamp-2">{cat.name}</span>
-                    </div>
-                    {/* Question Tiles */}
-                    <div className="flex-1 flex flex-col gap-1 lg:gap-2 overflow-y-auto">
-                      {cat.questions.map(q => {
-                        const isAvail = q.state === QuestionState.AVAILABLE || q.state === QuestionState.ACTIVE;
-                        return (
-                          <button 
-                            key={q.id}
-                            onClick={() => selectQuestion(cat.id, q.id)}
-                            disabled={!isAvail}
-                            className={`
-                              flex-1 min-h-[40px] relative group flex items-center justify-center border transition-all duration-300 shrink-0
-                              ${q.state === QuestionState.ACTIVE ? 'bg-gold-500 border-gold-300 shadow-glow-strong z-10' : 
-                                q.state === QuestionState.VOIDED ? 'bg-zinc-900/50 border-red-900/30 text-red-700 cursor-not-allowed' :
-                                isAvail ? 'bg-luxury-panel border-gold-900/40 hover:bg-gold-900/20 hover:border-gold-500' : 'opacity-0 pointer-events-none'}
-                            `}
-                          >
-                             <span className={`font-serif font-black tracking-tighter text-responsive-lg ${q.state === QuestionState.ACTIVE ? 'text-black' : 'text-gold-500 shadow-black drop-shadow-md'}`}>
-                               {q.state === QuestionState.VOIDED ? <span className="text-[10px] font-bold tracking-widest text-red-900/50 transform -rotate-12">VOID</span> : (isAvail ? q.points : '')}
-                             </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* LEADERBOARD (Visible if Leaderboard Tab active OR on Desktop) */}
-              <div className={`
-                 ${activeMobileTab === 'LEADERBOARD' ? 'flex flex-col overflow-y-auto' : 'hidden md:grid'}
-                 md:h-[15%] md:min-h-[80px] md:grid-cols-8 gap-2 bg-luxury-dark/50 p-2 rounded border-t border-gold-900/50
-              `}>
-                {gameState.players.map((p, i) => (
-                  <div key={p.id} className={`
-                     relative flex md:flex-col items-center justify-between md:justify-center rounded border bg-luxury-panel transition-all duration-300 p-3 md:p-0 mb-2 md:mb-0
-                     ${i === gameState.activePlayerIndex ? 'border-gold-500 shadow-glow bg-gradient-to-b from-luxury-panel to-gold-900/20' : 'border-zinc-800 opacity-80'}
-                  `}>
-                     <div className="flex items-center gap-2 md:block md:w-full md:text-center">
-                       {i === gameState.activePlayerIndex && <span className="md:absolute md:top-1 md:right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-glow"></span>}
-                       <div className="text-xs text-zinc-500 tracking-wider uppercase font-bold truncate">{p.name}</div>
-                     </div>
-                     
-                     <div className={`font-serif font-bold text-lg md:text-responsive-lg leading-none ${p.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{p.score}</div>
-                     
-                     {p.streak >= 2 && (
-                        <div className="flex items-center gap-1 bg-black/80 border border-orange-500/50 rounded-full px-2 py-0.5 md:absolute md:-top-3 md:left-1/2 md:-translate-x-1/2">
-                          <span className="text-[10px] animate-pulse">🔥</span>
-                          <span className="text-[9px] font-mono font-bold text-orange-400">{p.streak}</span>
-                        </div>
-                      )}
-                  </div>
-                ))}
-              </div>
-
-              {/* DESKTOP FOOTER FEED (Hidden on Mobile) */}
-              <div className="hidden md:flex h-8 shrink-0 items-center justify-between gap-4 bg-luxury-panel/80 rounded border border-zinc-900 px-4 shadow-lg backdrop-blur-sm">
-                 <div className="flex items-center gap-4 text-[9px] text-zinc-600 font-bold uppercase tracking-widest overflow-hidden">
-                     <span>{UI_TEXT.game.tooltips.reveal}</span>
-                     <span>{UI_TEXT.game.tooltips.award}</span>
-                     <span>{UI_TEXT.game.tooltips.void}</span>
-                     <span>{UI_TEXT.game.tooltips.return}</span>
-                     <span>{UI_TEXT.game.tooltips.playerSelect}</span>
-                 </div>
-                 <div className="flex items-center gap-3 pl-4 border-l border-zinc-800">
-                    <div className="flex items-center gap-1.5">
-                       <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                       <span className="text-[9px] text-zinc-500 font-serif uppercase tracking-widest">{UI_TEXT.game.live}</span>
-                    </div>
-                    <div className="text-[10px] font-mono text-gold-400 font-bold uppercase tracking-wide min-w-[100px] text-right">
-                       {gameState.activityLog[0] || UI_TEXT.game.ready}
-                    </div>
-                 </div>
-              </div>
-          </div>
-        </div>
-
-        {/* --- MOBILE FIXED ACTION BAR (SAFE AREA) --- */}
-        <div className="md:hidden shrink-0 bg-luxury-panel border-t border-gold-900/50 pb-safe z-30">
-            <div className="flex flex-col gap-2 p-3">
-               {/* Row 1: Active Player & Score Controls */}
-               <div className="flex items-center justify-between bg-black/40 rounded p-2 border border-zinc-800">
-                   <div className="flex items-center gap-2 overflow-hidden">
-                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex - 1 + 8) % 8 }))}><Icons.ChevronLeft/></Button>
-                      <div className="flex flex-col">
-                         <span className="text-[9px] text-zinc-500 uppercase tracking-widest">ACTIVE</span>
-                         <span className="text-xs font-bold text-gold-300 truncate w-24">{activePlayer.name}</span>
+     return (
+        <div className="h-dvh w-full flex flex-col bg-luxury-black text-gold-300 relative">
+           <Header />
+           <div className="flex-1 overflow-hidden relative flex">
+              {/* Main Game Board */}
+              <div className="flex-1 flex flex-col relative">
+                  {/* ... Board or Question ... */}
+                  {gameState.currentQuestion ? (
+                      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in zoom-in duration-300">
+                          <div className="mb-8 max-w-4xl">
+                              <h2 className="text-3xl md:text-5xl font-serif text-white leading-tight mb-8">
+                                  {gameState.categories.find(c => c.id === gameState.currentQuestion?.categoryId)?.questions.find(q => q.id === gameState.currentQuestion?.questionId)?.question}
+                              </h2>
+                              {gameState.currentQuestionState === QuestionState.REVEALED && (
+                                  <div className="text-2xl md:text-4xl font-sans font-bold text-gold-400 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                      {gameState.categories.find(c => c.id === gameState.currentQuestion?.categoryId)?.questions.find(q => q.id === gameState.currentQuestion?.questionId)?.answer}
+                                  </div>
+                              )}
+                          </div>
                       </div>
-                      <Button variant="icon" onClick={() => setGameState(p => ({ ...p, activePlayerIndex: (p.activePlayerIndex + 1) % 8 }))}><Icons.ChevronRight/></Button>
-                   </div>
-                   <div className="flex items-center gap-2">
-                      <Button variant="danger" className="px-3 py-1 text-lg font-bold" onClick={() => setGameState(p => { const pl = [...p.players]; pl[p.activePlayerIndex].score -= 100; pl[p.activePlayerIndex].streak = 0; return {...p, players: pl}; })}>-</Button>
-                      <span className={`font-mono text-lg font-bold w-12 text-center ${activePlayer.score < 0 ? 'text-red-500' : 'text-gold-300'}`}>{activePlayer.score}</span>
-                      <Button variant="secondary" className="px-3 py-1 text-lg font-bold text-green-500 border-green-900" onClick={() => setGameState(p => { const pl = [...p.players]; pl[p.activePlayerIndex].score += 100; return {...p, players: pl}; })}>+</Button>
-                   </div>
-               </div>
-               {/* Row 2: Game Actions (Context Sensitive) */}
-               {gameState.currentQuestion && (
-                 <div className="grid grid-cols-4 gap-2">
-                    {gameState.currentQuestionState === QuestionState.REVEALED ? (
-                      <>
-                        <Button variant="primary" className="col-span-2" onClick={() => resolveQuestion('AWARD')}>{UI_TEXT.game.controls.award}</Button>
-                        <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>{UI_TEXT.game.controls.back}</Button>
-                        <Button variant="danger" onClick={() => resolveQuestion('VOID')}>{UI_TEXT.game.controls.void}</Button>
-                      </>
-                    ) : (
-                      <Button variant="primary" className="col-span-4 animate-pulse" onClick={revealAnswer}>{UI_TEXT.game.controls.reveal}</Button>
-                    )}
+                  ) : (
+                      <div className="flex-1 p-4 grid" style={{ gridTemplateColumns: `repeat(${gameState.categories.length}, minmax(0, 1fr))` }}>
+                          {gameState.categories.map(cat => (
+                              <div key={cat.id} className="flex flex-col gap-2">
+                                  <div className="text-center py-4 bg-luxury-dark border-b-2 border-gold-600 mb-2">
+                                      <h3 className="text-gold-100 font-bold text-sm md:text-xl uppercase tracking-widest shadow-black drop-shadow-md">{cat.name}</h3>
+                                  </div>
+                                  <div className="flex flex-col gap-2 px-1">
+                                      {cat.questions.map(q => (
+                                          <button
+                                              key={q.id}
+                                              disabled={q.state !== QuestionState.AVAILABLE}
+                                              onClick={() => selectQuestion(cat.id, q.id)}
+                                              className={`
+                                                  h-16 md:h-24 flex items-center justify-center text-xl md:text-3xl font-serif font-bold transition-all duration-300
+                                                  ${q.state === QuestionState.AVAILABLE 
+                                                      ? 'bg-luxury-panel text-gold-400 border border-gold-900/50 hover:bg-gold-600 hover:text-black hover:scale-105 shadow-lg cursor-pointer' 
+                                                      : 'opacity-0 cursor-default pointer-events-none'
+                                                  }
+                                              `}
+                                          >
+                                              ${q.points}
+                                          </button>
+                                      ))}
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+
+              {/* Director Panel (In-Game) */}
+              {gameState.directorMode && !isDirectorPoppedOut && (
+                  <div className="w-96 border-l border-gold-600 shadow-2xl z-40 bg-luxury-black shrink-0 hidden lg:block">
+                      <DirectorPanel 
+                          gameState={gameState} 
+                          setGameState={setGameState} 
+                          onClose={() => setGameState(p => ({...p, directorMode: false}))}
+                          openDetached={openDetachedDirector}
+                          hotkeysEnabled={hotkeysEnabled}
+                          toggleHotkeys={() => setHotkeysEnabled(!hotkeysEnabled)}
+                      />
+                  </div>
+              )}
+              
+              {/* Director Placeholder */}
+              {isDirectorPoppedOut && (
+                 <div className="absolute top-4 right-4 z-50">
+                    <DirectorPlaceholder onBringBack={handleBringBackDirector} className="w-64 rounded border border-gold-500" />
                  </div>
-               )}
-            </div>
-        </div>
-
-        {/* --- OVERLAYS --- */}
-
-        {/* DIRECTOR PANEL DRAWER */}
-        {gameState.directorMode && (
-           <div className="fixed inset-0 z-50 md:absolute md:top-0 md:right-0 md:bottom-0 md:w-80 md:inset-auto">
-             {isDirectorPoppedOut ? (
-                <DirectorPlaceholder 
-                   onBringBack={handleBringBackDirector} 
-                   className="w-full h-full shadow-2xl" 
-                />
-             ) : (
-                <DirectorPanel 
-                  gameState={gameState} 
-                  setGameState={setGameState} 
-                  onClose={() => setGameState(p => ({...p, directorMode: false}))}
-                  openDetached={openDetachedDirector}
-                  hotkeysEnabled={hotkeysEnabled}
-                  toggleHotkeys={() => setHotkeysEnabled(!hotkeysEnabled)}
-                  className="w-full h-full shadow-2xl"
-                />
-             )}
+              )}
            </div>
-        )}
-
-        {/* ACTIVE QUESTION OVERLAY (RESPONSIVE) */}
-        {gameState.currentQuestion && (() => {
-           const cat = gameState.categories.find(c => c.id === gameState.currentQuestion!.categoryId);
-           const q = cat?.questions.find(q => q.id === gameState.currentQuestion!.questionId);
-           if (!q) return null;
-           const isVoided = q.state === QuestionState.VOIDED;
-
-           return (
-             <div className="fixed md:absolute inset-0 z-40 bg-luxury-black md:bg-luxury-glass md:backdrop-blur-md flex items-center justify-center p-0 md:p-6 animate-in fade-in duration-300">
-                <div className={`w-full h-full md:h-auto md:max-w-5xl md:aspect-video bg-black md:border-2 shadow-glow-strong md:rounded-lg flex flex-col overflow-hidden relative ${isVoided ? 'border-red-900/50' : 'border-gold-600'}`}>
-                   {/* Card Header */}
-                   <div className="h-16 shrink-0 flex items-center justify-between px-4 md:px-8 bg-gradient-to-r from-gold-900/20 to-transparent border-b border-gold-900/50 pt-safe">
-                      <span className={`font-serif tracking-widest text-sm md:text-lg ${isVoided ? 'text-zinc-600' : 'text-gold-400'}`}>{cat?.name}</span>
-                      <span className={`font-serif font-bold text-xl md:text-2xl ${isVoided ? 'text-zinc-600' : 'text-gold-200'}`}>{q.points}</span>
-                   </div>
-                   
-                   {/* Card Content */}
-                   <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 text-center relative overflow-y-auto custom-scrollbar">
-                      {isVoided && <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center pointer-events-none"><span className="text-red-500 font-bold text-4xl tracking-[1em] border-4 border-red-900/50 p-8 transform -rotate-12">VOIDED</span></div>}
-                      
-                      {q.isDoubleOrNothing && !isVoided && (
-                        <div className="absolute top-4 md:top-8 px-4 py-1 md:px-6 md:py-2 bg-gradient-to-r from-red-900 to-red-600 text-white font-black text-sm md:text-xl skew-x-[-12deg] shadow-lg animate-bounce border border-red-400 z-10">{UI_TEXT.editor.don}</div>
-                      )}
-                      
-                      <h2 className={`font-serif font-bold leading-tight drop-shadow-lg text-responsive-xl md:text-responsive-hero max-w-4xl my-auto ${isVoided ? 'text-zinc-700 blur-sm' : 'text-white'}`}>{q.question}</h2>
-                      
-                      {/* USE TOP-LEVEL STATE FOR RENDERING */}
-                      {gameState.currentQuestionState === QuestionState.REVEALED && !isVoided && (
-                        <div className="mt-8 md:mt-12 pt-8 border-t-2 border-gold-500/30 w-full animate-in slide-in-from-bottom-8 duration-500">
-                           <p className="font-serif text-gold-400 text-lg md:text-responsive-xl">{q.answer}</p>
-                        </div>
-                      )}
-                      
-                      {gameState.currentQuestionState !== QuestionState.REVEALED && !isVoided && (
-                         <div className="mt-auto pt-8 text-zinc-500 text-xs tracking-[0.3em] uppercase animate-pulse">Reveal to continue</div>
-                      )}
-                   </div>
-
-                   {/* Card Footer Controls (Desktop Only - Mobile uses fixed bar) */}
-                   <div className="hidden md:flex h-24 shrink-0 bg-luxury-panel border-t border-gold-900 items-center justify-center gap-6 z-30">
-                      {isVoided ? (
-                        <Button variant="secondary" onClick={() => resolveQuestion('RETURN')}>CLOSE VOIDED QUESTION</Button>
-                      ) : (
-                        <>
-                           <Button 
-                             variant="danger" 
-                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
-                             onClick={() => resolveQuestion('VOID')}
-                             title={UI_TEXT.game.tooltips.void}
-                           >
-                             {UI_TEXT.game.controls.void}
-                           </Button>
-
-                           <Button 
-                             variant="secondary" 
-                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
-                             onClick={() => resolveQuestion('RETURN')}
-                             title={UI_TEXT.game.tooltips.return}
-                           >
-                             {UI_TEXT.game.controls.return}
-                           </Button>
-                           
-                           {gameState.currentQuestionState !== QuestionState.REVEALED ? (
-                              <Button onClick={revealAnswer} className="w-64 py-4 text-xl shadow-[0_0_20px_rgba(221,184,86,0.2)] animate-pulse">{UI_TEXT.game.controls.reveal}</Button>
-                           ) : (
-                              <div className="w-64 text-center text-gold-500 font-bold tracking-widest text-xs opacity-50 select-none">{UI_TEXT.game.controls.revealed}</div>
-                           )}
-
-                           <Button 
-                             variant="primary" 
-                             disabled={gameState.currentQuestionState !== QuestionState.REVEALED} 
-                             onClick={() => resolveQuestion('AWARD')} 
-                             className={gameState.currentQuestionState === QuestionState.REVEALED ? "w-48 py-3 text-lg" : ""}
-                             title={UI_TEXT.game.tooltips.award}
-                           >
-                             {UI_TEXT.game.controls.award}
-                           </Button>
-                        </>
-                      )}
-                   </div>
-                   {/* Padding for Mobile Safe Area behind fixed bar */}
-                   <div className="md:hidden h-32 w-full shrink-0"></div>
-                </div>
-             </div>
-           )
-        })()}
-        
-        <Footer />
-      </div>
-    );
+           
+           {/* Player Scores Footer */}
+           <div className="h-24 bg-black border-t border-gold-900 shrink-0 grid grid-cols-4 md:grid-cols-8 divide-x divide-gold-900/30">
+              {gameState.players.map((p, i) => (
+                  <div key={p.id} className={`flex flex-col items-center justify-center relative ${i === gameState.activePlayerIndex ? 'bg-gold-900/20' : ''}`}>
+                      {i === gameState.activePlayerIndex && <div className="absolute top-0 w-full h-1 bg-gold-500 animate-pulse" />}
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 truncate max-w-full px-2">{p.name}</span>
+                      <span className={`text-xl font-bold font-mono ${p.score < 0 ? 'text-red-500' : 'text-gold-200'}`}>{p.score}</span>
+                  </div>
+              ))}
+           </div>
+        </div>
+     );
   }
 
+  // Fallback
   return null;
 }
 
-// Wrap with Providers
-export default function App() {
-  return (
-    <ErrorBoundary>
-      <ToastProvider>
-        <CruzPhamTriviaApp />
-      </ToastProvider>
-    </ErrorBoundary>
-  );
-}
+const AppWrapper = () => (
+  <ErrorBoundary>
+    <ToastProvider>
+      <CruzPhamTriviaApp />
+    </ToastProvider>
+  </ErrorBoundary>
+);
+
+export default AppWrapper;

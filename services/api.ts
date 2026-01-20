@@ -50,11 +50,10 @@ export const API = {
       logger.debug('API_VALIDATION_PASSED', {}, cid);
 
       // 2. SERVER-SIDE RATE LIMITING & DUPLICATE CHECK
-      // Note: In real backend, we'd query Firestore directly. Here we use StorageService as the DB interface.
-      const existingRequests = StorageService.getTokenRequests(); // New method needed in StorageService to expose raw data for "server" usage
+      const existingRequests = StorageService.getTokenRequests();
       
       // IP/Device Hash Simulation (In real app, req.ip)
-      const ipHash = StorageService.getDeviceId(); // Reuse existing logic
+      const ipHash = StorageService.getDeviceId(); 
       
       // Check 24h Rate Limit
       const recentRequests = existingRequests.filter(r => 
@@ -79,7 +78,7 @@ export const API = {
         throw { code: 'ERR_DUPLICATE_REQUEST', message: 'A pending request already exists for this handle or username.' };
       }
 
-      // 3. PERSISTENCE (Status: PENDING)
+      // 3. PERSISTENCE (Status: PENDING) -> CRITICAL: SAVE BEFORE EMAIL
       const newRequest: TokenRequest = {
         id: crypto.randomUUID(),
         firstName: firstName.trim(),
@@ -100,6 +99,7 @@ export const API = {
       logger.info('API_REQUEST_STORED', { requestId: newRequest.id }, cid);
 
       // 4. EMAIL NOTIFICATION (Async Transaction)
+      // We attempt to send. If it fails, the request is already saved in DB.
       const emailBody = `
         NEW TOKEN REQUEST [${newRequest.id}]
         -----------------------------------
@@ -128,9 +128,9 @@ export const API = {
         logger.info('API_EMAIL_SENT', { messageId: emailResult.messageId }, cid);
       } else {
         newRequest.emailStatus = 'FAILED';
-        newRequest.lastError = emailResult.error;
+        newRequest.lastError = emailResult.error || 'Unknown Provider Error';
         logger.error('API_EMAIL_FAILED', new Error(emailResult.error), { requestId: newRequest.id }, cid);
-        // Note: We do NOT throw here, we return success to user but log failure internally
+        // We do NOT throw here, we return success to user because the request IS saved.
       }
       
       StorageService.updateTokenRequest(newRequest);
@@ -141,7 +141,6 @@ export const API = {
       const code = error.code || 'ERR_INTERNAL';
       const message = error.message || 'Internal Server Error';
       
-      // Don't log validation errors as system errors
       if (code === 'ERR_INTERNAL') {
         logger.error('API_INTERNAL_ERROR', error, {}, cid);
       }
@@ -151,5 +150,64 @@ export const API = {
         error: { code, message }
       };
     }
+  },
+
+  /**
+   * Retries sending the email for a failed request.
+   * Admin Only function.
+   */
+  retryTokenRequestEmail: async (requestId: string): Promise<ApiResponse<TokenRequest>> => {
+      const cid = crypto.randomUUID();
+      logger.info('API_RETRY_EMAIL', { requestId }, cid);
+
+      try {
+          const requests = StorageService.getTokenRequests();
+          const req = requests.find(r => r.id === requestId);
+          
+          if (!req) throw { code: 'ERR_NOT_FOUND', message: 'Request not found' };
+
+          const emailBody = `
+            [RETRY] NEW TOKEN REQUEST [${req.id}]
+            -----------------------------------
+            Timestamp: ${new Date(req.createdAt).toISOString()}
+            
+            APPLICANT DETAILS:
+            Name: ${req.firstName} ${req.lastName}
+            TikTok: ${req.tiktokHandle}
+            Phone: ${req.phoneNumber}
+            Desired Username: ${req.preferredUsername}
+          `;
+
+          const emailResult = await EmailProvider.sendEmail({
+            to: EmailProvider.getAdmins(),
+            subject: `[RETRY] CruzPham Trivia Token Request: ${req.preferredUsername}`,
+            text: emailBody
+          });
+
+          if (emailResult.success) {
+            req.emailStatus = 'SENT';
+            req.lastError = undefined; // Clear error
+            StorageService.updateTokenRequest(req);
+            return { success: true, data: req };
+          } else {
+            req.emailStatus = 'FAILED';
+            req.lastError = emailResult.error;
+            StorageService.updateTokenRequest(req);
+            throw { code: 'ERR_EMAIL_PROVIDER', message: 'Retry failed: ' + emailResult.error };
+          }
+
+      } catch (error: any) {
+         return {
+            success: false,
+            error: { code: error.code || 'ERR_INTERNAL', message: error.message }
+         };
+      }
+  },
+
+  /**
+   * Get all requests (Admin)
+   */
+  getRequests: async (): Promise<TokenRequest[]> => {
+      return StorageService.getTokenRequests().sort((a, b) => b.createdAt - a.createdAt);
   }
 };

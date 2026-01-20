@@ -1,4 +1,5 @@
 
+
 export const UI_TEXT = {
   brand: {
     studioName: "CRUZPHAM TRIVIA STUDIOS",
@@ -32,6 +33,7 @@ export const UI_TEXT = {
   auth: {
     tabs: {
       login: "LOG IN",
+      register: "REGISTER"
     },
     login: {
       title: "ENTER STUDIO",
