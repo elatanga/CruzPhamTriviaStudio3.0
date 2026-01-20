@@ -229,13 +229,38 @@ const QuestionDisplay: React.FC<{
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-        if (q?.state === QuestionState.REVEALED && e.key.toLowerCase() === 's' && !isStealing) {
-            setIsStealing(true);
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+        if (q?.state === QuestionState.REVEALED) {
+            // 'S' Key -> Toggle Steal
+            if (e.key.toLowerCase() === 's' && !isStealing) {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsStealing(true);
+            }
+            
+            // Steal Mode Controls
+            if (isStealing) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation(); // Stop Global Award
+                    if (stealTarget !== null) {
+                        handleConfirmSteal();
+                    }
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation(); // Stop Global Void
+                    setIsStealing(false);
+                    setStealTarget(null);
+                }
+            }
         }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [q?.state, isStealing]);
+    // Capture to intercept before Global Handlers
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, [q?.state, isStealing, stealTarget]);
 
   if (!q) return null;
 
@@ -791,7 +816,26 @@ const DirectorPanel: React.FC<{
   const updatePlayerName = (index: number, name: string) => { setGameState(prev => { const players = [...prev.players]; players[index].name = name; return { ...prev, players }; }); };
   const resetQuestion = (categoryId: string, questionId: string) => { setGameState(prev => { const cats = prev.categories.map(c => c.id === categoryId ? { ...c, questions: c.questions.map(q => q.id === questionId ? { ...q, state: QuestionState.AVAILABLE } : q) } : c); return { ...prev, categories: cats, currentQuestion: null, currentQuestionState: null }; }); showToast("Tile Reset", 'info'); };
   const selectForEditing = (categoryId: string, questionId: string) => { const cat = gameState.categories.find(c => c.id === categoryId); const q = cat?.questions.find(q => q.id === questionId); if (q) { setEditingQ({ cid: categoryId, qid: questionId }); setEditForm({ q: q.question, a: q.answer }); } };
-  const saveEditedQuestion = () => { if (!editingQ) return; setGameState(prev => { const newCats = prev.categories.map(c => c.id === editingQ.cid ? { ...c, questions: c.questions.map(q => q.id === editingQ.qid ? { ...q, question: editForm.q, answer: editForm.a } : q) } : c); return { ...prev, categories: newCats }; }); showToast("Updated", 'success'); };
+  const saveEditedQuestion = () => { 
+    if (!editingQ) return; 
+    setGameState(prev => { 
+      const newCats = prev.categories.map(c => 
+        c.id === editingQ.cid ? { 
+          ...c, 
+          questions: c.questions.map(q => 
+            q.id === editingQ.qid ? { 
+              ...q, 
+              question: editForm.q, 
+              answer: editForm.a,
+              state: QuestionState.AVAILABLE // FORCE AVAILABLE ON EDIT SAVE
+            } : q
+          ) 
+        } : c
+      ); 
+      return { ...prev, categories: newCats }; 
+    }); 
+    showToast("Question Updated & Restored", 'success'); 
+  };
 
   return (
     <div className={`flex flex-col bg-luxury-panel border-l border-gold-900/50 shadow-2xl h-full ${className}`}>
@@ -859,6 +903,8 @@ const SafeGameBoard: React.FC<{
                <div key={category.id} className="flex-1 flex flex-col gap-2 md:gap-4">
                   {category.questions.map(q => {
                      const isAvailable = q.state === QuestionState.AVAILABLE;
+                     const isVoided = q.state === QuestionState.VOIDED;
+                     
                      return (
                         <button
                            key={q.id}
@@ -868,10 +914,13 @@ const SafeGameBoard: React.FC<{
                              flex-1 relative flex items-center justify-center border-2 rounded-sm transition-all duration-300
                              ${isAvailable 
                                ? 'bg-luxury-panel border-gold-900/30 hover:border-gold-500 hover:bg-gold-900/20 hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(221,184,86,0.3)] cursor-pointer text-gold-400 font-serif font-bold text-xl md:text-4xl shadow-lg' 
-                               : 'bg-black/20 border-transparent text-transparent pointer-events-none'}
+                               : isVoided 
+                                 ? 'bg-zinc-900 border-zinc-800 text-zinc-700 cursor-not-allowed grayscale opacity-60' 
+                                 : 'bg-black/20 border-transparent text-transparent pointer-events-none'}
                            `}
                         >
-                           {isAvailable && <span className="drop-shadow-lg tracking-widest">{q.points}</span>}
+                           {(isAvailable || isVoided) && <span className="drop-shadow-lg tracking-widest">{q.points}</span>}
+                           {isVoided && <div className="absolute inset-0 flex items-center justify-center pointer-events-none"><span className="text-[8px] md:text-[10px] text-red-900 font-bold -rotate-12 border border-red-900/50 px-1 uppercase">VOID</span></div>}
                         </button>
                      );
                   })}
@@ -953,6 +1002,7 @@ function CruzPhamTriviaApp() {
     directorMode: false,
   });
 
+  const [activeGameTab, setActiveGameTab] = useState<'BOARD' | 'DIRECTOR'>('BOARD');
   const [isDirectorPoppedOut, setIsDirectorPoppedOut] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<'BOARD' | 'LEADERBOARD'>('BOARD');
   const [isSetupOpen, setIsSetupOpen] = useState(false);
@@ -1051,6 +1101,35 @@ function CruzPhamTriviaApp() {
     if (broadcastRef.current && (gameState.isActive || view === 'DIRECTOR_DETACHED')) { broadcastRef.current.postMessage({ type: 'STATE_UPDATE', payload: gameState }); }
   }, [gameState, session]);
 
+  // Director Detached Lifecycle
+  useEffect(() => {
+    if (view === 'DIRECTOR_DETACHED') {
+      logger.info('DIRECTOR_DETACHED_MOUNTED');
+      
+      const handleUnload = () => {
+        logger.info('DIRECTOR_DETACHED_CLOSED');
+        // Notify main window we are gone
+        const bc = new BroadcastChannel('cruzpham_game_state');
+        bc.postMessage({ type: 'DIRECTOR_CLOSED' });
+        bc.close();
+      };
+
+      const bc = new BroadcastChannel('cruzpham_game_state');
+      bc.onmessage = (event) => {
+         if (event.data.type === 'FORCE_CLOSE_POPOUT') {
+             logger.info('DIRECTOR_FORCE_CLOSE_RECEIVED');
+             window.close();
+         }
+      };
+
+      window.addEventListener('beforeunload', handleUnload);
+      return () => {
+        window.removeEventListener('beforeunload', handleUnload);
+        bc.close();
+      };
+    }
+  }, [view]);
+
   useEffect(() => {
     const handleOnline = () => { setIsOnline(true); showToast("Connection Restored", 'success'); };
     const handleOffline = () => { setIsOnline(false); showToast("Network Connection Lost", 'error'); };
@@ -1058,7 +1137,60 @@ function CruzPhamTriviaApp() {
     return () => { window.removeEventListener('online', handleOnline); window.removeEventListener('offline', handleOffline); };
   }, [showToast]);
 
-  const handleSelectQuestion = (catId: string, qId: string) => { /* logic */ setGameState(prev => { const cat = prev.categories.find(c => c.id === catId); const q = cat?.questions.find(q => q.id === qId); if (!q || q.state !== QuestionState.AVAILABLE) return prev; soundService.playReveal(); const newCats = prev.categories.map(c => c.id === catId ? { ...c, questions: c.questions.map(qu => qu.id === qId ? { ...qu, state: QuestionState.ACTIVE } : qu) } : c); return { ...prev, categories: newCats, askedPlayerIndex: prev.activePlayerIndex, currentQuestion: { categoryId: catId, questionId: qId }, currentQuestionState: QuestionState.ACTIVE, activityLog: [`OPENED: ${q.points}pts`, ...prev.activityLog] }; }); };
+  const handlePopout = () => {
+    if (!session) return;
+    logger.info('DIRECTOR_POPOUT_REQUESTED', { sessionId: session.sessionId });
+    
+    const ticket = StorageService.createDetachTicket(session.sessionId);
+    logger.debug('DIRECTOR_TICKET_CREATED', { ticket });
+
+    // Calculate center position
+    const width = 1000;
+    const height = 800;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+
+    const win = window.open(
+      `?mode=director&ticket=${ticket}`, 
+      'CruzPhamDirector', 
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=yes`
+    );
+
+    if (win) {
+      logger.info('DIRECTOR_POPOUT_OPENED');
+      setIsDirectorPoppedOut(true);
+      win.focus();
+    } else {
+      logger.error('DIRECTOR_POPOUT_BLOCKED', new Error('Popup blocked'));
+      showToast("Popup blocked. Please allow popups for this site.", 'error');
+    }
+  };
+
+  const handleBringBack = () => {
+    logger.info('DIRECTOR_BRING_BACK_REQUESTED');
+    broadcastRef.current?.postMessage({ type: 'FORCE_CLOSE_POPOUT' });
+    setIsDirectorPoppedOut(false);
+    showToast("Director controls restored.", 'success');
+  };
+
+  const handleSelectQuestion = (catId: string, qId: string) => { 
+    setGameState(prev => { 
+        const cat = prev.categories.find(c => c.id === catId); 
+        const q = cat?.questions.find(q => q.id === qId); 
+        
+        if (q?.state === QuestionState.VOIDED) {
+            showToast("Voided Tile. Replace in Director to restore.", 'warning');
+            soundService.playVoid();
+            return prev;
+        }
+
+        if (!q || q.state !== QuestionState.AVAILABLE) return prev; 
+        
+        soundService.playReveal(); 
+        const newCats = prev.categories.map(c => c.id === catId ? { ...c, questions: c.questions.map(qu => qu.id === qId ? { ...qu, state: QuestionState.ACTIVE } : qu) } : c); 
+        return { ...prev, categories: newCats, askedPlayerIndex: prev.activePlayerIndex, currentQuestion: { categoryId: catId, questionId: qId }, currentQuestionState: QuestionState.ACTIVE, activityLog: [`OPENED: ${q.points}pts`, ...prev.activityLog] }; 
+    }); 
+  };
   const handleReveal = () => { if (!gameState.currentQuestion || gameState.currentQuestionState !== QuestionState.ACTIVE) return; setGameState(prev => { if (!prev.currentQuestion) return prev; const { categoryId, questionId } = prev.currentQuestion; const newCats = prev.categories.map(c => c.id === categoryId ? { ...c, questions: c.questions.map(q => q.id === questionId ? { ...q, state: QuestionState.REVEALED } : q) } : c); soundService.playReveal(); return { ...prev, categories: newCats, currentQuestionState: QuestionState.REVEALED, activityLog: [`REVEALED ANSWER`, ...prev.activityLog] }; }); };
   const handleAward = (targetIndex?: number) => { if (!gameState.currentQuestion || gameState.currentQuestionState !== QuestionState.REVEALED) return; setGameState(prev => { if (!prev.currentQuestion) return prev; const { categoryId, questionId } = prev.currentQuestion; const cat = prev.categories.find(c => c.id === categoryId); const q = cat?.questions.find(q => q.id === questionId); if(!q) return prev; const awardPlayerIndex = targetIndex !== undefined ? targetIndex : prev.activePlayerIndex; const points = q.isDoubleOrNothing ? q.points * 2 : q.points; const newPlayers = [...prev.players]; newPlayers[awardPlayerIndex].score += points; newPlayers[awardPlayerIndex].streak += 1; const newCats = prev.categories.map(c => c.id === categoryId ? { ...c, questions: c.questions.map(qu => qu.id === questionId ? { ...qu, state: QuestionState.AWARDED } : qu) } : c); if (q.isDoubleOrNothing) soundService.playDoubleOrNothing(); else soundService.playAward(); const isSteal = targetIndex !== undefined && targetIndex !== prev.askedPlayerIndex; const logMsg = isSteal ? `STOLEN BY ${newPlayers[awardPlayerIndex].name} (${points}pts)` : `AWARDED ${points} TO ${newPlayers[awardPlayerIndex].name}`; return { ...prev, categories: newCats, players: newPlayers, currentQuestion: null, currentQuestionState: null, activityLog: [logMsg, ...prev.activityLog] }; }); };
   const handleVoid = () => { if (!gameState.currentQuestion || gameState.currentQuestionState !== QuestionState.REVEALED) return; setGameState(prev => { if (!prev.currentQuestion) return prev; const { categoryId, questionId } = prev.currentQuestion; const newCats = prev.categories.map(c => c.id === categoryId ? { ...c, questions: c.questions.map(qu => qu.id === questionId ? { ...qu, state: QuestionState.VOIDED } : qu) } : c); const newPlayers = [...prev.players]; newPlayers[prev.activePlayerIndex].streak = 0; soundService.playVoid(); return { ...prev, categories: newCats, players: newPlayers, currentQuestion: null, currentQuestionState: null, activityLog: [`VOIDED QUESTION`, ...prev.activityLog] }; }); };
@@ -1227,16 +1359,85 @@ function CruzPhamTriviaApp() {
       )}
 
       {view === 'GAME' && (
-        <AppShell activeShowName={activeProduction?.name}>
-           <ContentFrame fullWidth className="p-0">
-             <div className="flex-1 flex overflow-hidden relative w-full h-full">
-               <SafeGameBoard gameState={gameState} activeMobileTab={activeMobileTab} selectQuestion={handleSelectQuestion} setActiveMobileTab={setActiveMobileTab} />
-               {gameState.currentQuestion && <QuestionDisplay gameState={gameState} currentQuestion={gameState.currentQuestion} onReveal={handleReveal} onAward={handleAward} onVoid={handleVoid} onReturn={handleReturn} />}
-               {!isDirectorPoppedOut && <DirectorPanel gameState={gameState} setGameState={setGameState} className="w-96 border-l border-gold-900/50 relative z-30" openDetached={() => setIsDirectorPoppedOut(true)} />}
-             </div>
-             {isDirectorPoppedOut && <DirectorPlaceholder onBringBack={() => setIsDirectorPoppedOut(false)} className="absolute bottom-4 right-4 w-64 rounded shadow-xl z-50" />}
-             <button onClick={() => setView('DASHBOARD')} className="absolute top-2 right-2 text-zinc-500 text-xs hover:text-white z-50">EXIT</button>
-           </ContentFrame>
+        <AppShell activeShowName={activeProduction?.name} onSwitchShow={handleSwitchShow} noFooter>
+           <div className="flex flex-col h-full w-full bg-black">
+                {/* MAIN CONTENT AREA */}
+                <div className="flex-1 relative overflow-hidden">
+                    
+                    {/* TAB: BOARD */}
+                    <div className={`absolute inset-0 w-full h-full flex flex-col ${activeGameTab === 'BOARD' ? 'z-10 visible' : 'z-0 invisible'}`}>
+                        <SafeGameBoard 
+                            gameState={gameState} 
+                            activeMobileTab={activeMobileTab} 
+                            selectQuestion={handleSelectQuestion} 
+                            setActiveMobileTab={setActiveMobileTab} 
+                        />
+                        {gameState.currentQuestion && (
+                            <QuestionDisplay 
+                                gameState={gameState}
+                                currentQuestion={gameState.currentQuestion}
+                                onReveal={handleReveal}
+                                onAward={handleAward}
+                                onVoid={handleVoid}
+                                onReturn={handleReturn}
+                            />
+                        )}
+                    </div>
+
+                    {/* TAB: DIRECTOR */}
+                    <div className={`absolute inset-0 w-full h-full bg-luxury-panel ${activeGameTab === 'DIRECTOR' ? 'z-10 visible' : 'z-0 invisible'}`}>
+                        {isDirectorPoppedOut ? (
+                            <div className="flex items-center justify-center h-full">
+                                <DirectorPlaceholder onBringBack={handleBringBack} />
+                            </div>
+                        ) : (
+                            <DirectorPanel 
+                                gameState={gameState} 
+                                setGameState={setGameState} 
+                                openDetached={handlePopout}
+                                className="w-full h-full border-none"
+                                hotkeysEnabled={hotkeysEnabled}
+                                toggleHotkeys={() => setHotkeysEnabled(h => !h)}
+                            />
+                        )}
+                    </div>
+
+                </div>
+
+                {/* TAB BAR (BOTTOM) */}
+                <div className="shrink-0 h-16 bg-luxury-black border-t border-gold-900/50 flex items-center justify-center gap-4 z-50 relative">
+                    <button 
+                        onClick={() => setActiveGameTab('BOARD')}
+                        className={`flex items-center gap-2 px-8 py-3 rounded-sm border transition-all duration-200 ${
+                            activeGameTab === 'BOARD' 
+                            ? 'bg-gold-600 text-black border-gold-500 shadow-glow font-bold translate-y-[-2px]' 
+                            : 'bg-black text-zinc-500 border-zinc-800 hover:text-gold-400 hover:border-gold-900'
+                        }`}
+                    >
+                        <span className="tracking-[0.2em] text-xs">GAME BOARD</span>
+                    </button>
+                    <button 
+                        onClick={() => setActiveGameTab('DIRECTOR')}
+                        className={`flex items-center gap-2 px-8 py-3 rounded-sm border transition-all duration-200 ${
+                            activeGameTab === 'DIRECTOR' 
+                            ? 'bg-gold-600 text-black border-gold-500 shadow-glow font-bold translate-y-[-2px]' 
+                            : 'bg-black text-zinc-500 border-zinc-800 hover:text-gold-400 hover:border-gold-900'
+                        }`}
+                    >
+                        <span className="tracking-[0.2em] text-xs">DIRECTOR</span>
+                        {isDirectorPoppedOut && <Icons.Detach />}
+                    </button>
+                    
+                    <button 
+                        onClick={() => setView('DASHBOARD')} 
+                        className="absolute right-6 text-[10px] text-zinc-600 hover:text-red-500 tracking-widest flex items-center gap-1"
+                    >
+                        <Icons.Close /> EXIT EVENT
+                    </button>
+                </div>
+           </div>
+           
+           <DebugOverlay gameState={gameState} />
         </AppShell>
       )}
 
