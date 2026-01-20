@@ -124,7 +124,7 @@ const AppShell: React.FC<{ children: React.ReactNode; className?: string; noHead
             <div className="bg-gradient-to-r from-luxury-black via-zinc-900 to-luxury-black border-b border-gold-900/50 py-1 px-4 flex items-center justify-between">
                <span className="text-[10px] text-gold-300 font-bold tracking-widest uppercase">{UI_TEXT.production.currentPrefix}{activeShowName}</span>
                {onSwitchShow && (
-                 <button onClick={onSwitchShow} className="text-[9px] text-zinc-500 hover:text-gold-400 font-bold uppercase tracking-wider underline cursor-pointer pointer-events-auto">
+                 <button onClick={onSwitchShow} className="text-[9px] text-zinc-500 hover:text-gold-400 font-bold uppercase tracking-wider underline">
                    {UI_TEXT.production.switch}
                  </button>
                )}
@@ -984,7 +984,6 @@ function CruzPhamTriviaApp() {
   // Event State
   const [eventName, setEventName] = useState<string>("");
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   // Game State
   const [gameState, setGameState] = useState<GameState>({
@@ -1174,41 +1173,6 @@ function CruzPhamTriviaApp() {
     showToast("Director controls restored.", 'success');
   };
 
-  const handleExitClick = () => {
-    logger.info('exitEventClicked');
-    setShowExitConfirm(true);
-  };
-
-  const confirmExit = () => {
-    try {
-        if (isDirectorPoppedOut) {
-            handleBringBack();
-        }
-        setGameState(prev => ({ ...prev, isActive: false, currentQuestion: null, currentQuestionState: null }));
-        setView('DASHBOARD');
-        setShowExitConfirm(false);
-        showToast("Event Exited", 'info');
-    } catch (e) {
-        logger.error('exitEventFailed', e as Error);
-        showToast("Exit failed. Try again.", 'error');
-    }
-  };
-
-  const handleSwitchShowClick = () => {
-    logger.info('switchShowClicked');
-    if (gameState.currentQuestionState === QuestionState.ACTIVE || gameState.currentQuestionState === QuestionState.REVEALED) {
-        showToast("Close the current question before switching shows.", 'warning');
-        return;
-    }
-    
-    try {
-        setView('PRODUCTION_SELECT');
-    } catch (e) {
-        logger.error('switchShowFailed', e as Error);
-        showToast("Couldn't switch shows. Try again.", 'error');
-    }
-  };
-
   const handleSelectQuestion = (catId: string, qId: string) => { 
     setGameState(prev => { 
         const cat = prev.categories.find(c => c.id === catId); 
@@ -1395,7 +1359,7 @@ function CruzPhamTriviaApp() {
       )}
 
       {view === 'GAME' && (
-        <AppShell activeShowName={activeProduction?.name} onSwitchShow={handleSwitchShowClick} noFooter>
+        <AppShell activeShowName={activeProduction?.name} onSwitchShow={handleSwitchShow} noFooter>
            <div className="flex flex-col h-full w-full bg-black">
                 {/* MAIN CONTENT AREA */}
                 <div className="flex-1 relative overflow-hidden">
@@ -1465,8 +1429,8 @@ function CruzPhamTriviaApp() {
                     </button>
                     
                     <button 
-                        onClick={handleExitClick} 
-                        className="absolute right-6 text-[10px] text-zinc-600 hover:text-red-500 tracking-widest flex items-center gap-1 cursor-pointer pointer-events-auto"
+                        onClick={() => setView('DASHBOARD')} 
+                        className="absolute right-6 text-[10px] text-zinc-600 hover:text-red-500 tracking-widest flex items-center gap-1"
                     >
                         <Icons.Close /> EXIT EVENT
                     </button>
@@ -1474,19 +1438,6 @@ function CruzPhamTriviaApp() {
            </div>
            
            <DebugOverlay gameState={gameState} />
-
-           {showExitConfirm && (
-                <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4 animate-in fade-in">
-                    <Card className="w-full max-w-sm p-6 border-red-900/50 bg-zinc-900 text-center shadow-2xl">
-                        <h3 className="text-xl font-serif text-white mb-2 tracking-widest">EXIT EVENT?</h3>
-                        <p className="text-zinc-400 text-xs mb-6 font-sans">The game will stop. Your session will remain active.</p>
-                        <div className="flex gap-4">
-                            <Button variant="ghost" onClick={() => setShowExitConfirm(false)} className="flex-1">CANCEL</Button>
-                            <Button variant="danger" onClick={confirmExit} className="flex-1">EXIT EVENT</Button>
-                        </div>
-                    </Card>
-                </div>
-            )}
         </AppShell>
       )}
 
